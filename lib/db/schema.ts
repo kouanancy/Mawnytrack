@@ -1,7 +1,7 @@
 // Miroir Drizzle des migrations SQL (db/migrations). Les migrations font foi :
 // toute évolution passe par un nouveau fichier SQL, puis par une mise à jour de ce fichier.
 import { sql } from "drizzle-orm";
-import { bigint, boolean, date, integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 const tstz = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 const money = (name: string) => bigint(name, { mode: "number" });
@@ -114,5 +114,16 @@ export const projectDisbursements = pgTable("project_disbursements", {
 export const userSettings = pgTable("user_settings", {
   userId: text("user_id").primaryKey(),
   theme: text("theme", { enum: ["auto", "light", "dark"] }).notNull().default("auto"),
+  weeklyEmail: boolean("weekly_email").notNull().default(true),
   updatedAt: tstz("updated_at").notNull().defaultNow(),
+});
+
+export const weeklyReports = pgTable("weekly_reports", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  weekStart: date("week_start", { mode: "string" }).notNull(),
+  weekEnd: date("week_end", { mode: "string" }).notNull(),
+  generatedAt: tstz("generated_at").notNull().defaultNow(),
+  sentAt: tstz("sent_at"),
+  data: jsonb("data").notNull(),
 });

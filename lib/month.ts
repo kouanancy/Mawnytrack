@@ -65,3 +65,28 @@ export function dayLabel(day: string, today: string): string {
     timeZone: "UTC",
   });
 }
+
+/** Ajoute n jours à une date "YYYY-MM-DD". */
+export function addDays(day: string, n: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/** Lundi de la semaine contenant ce jour (semaine du lundi au dimanche). */
+export function mondayOf(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = dimanche
+  return addDays(day, -((dow + 6) % 7));
+}
+
+/** « lundi 20 octobre 2026 » */
+export function longDay(day: string, weekday = false): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("fr-FR", {
+    ...(weekday ? { weekday: "long" as const } : {}),
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}

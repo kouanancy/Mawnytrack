@@ -6,6 +6,8 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
+import { appOrigin } from "@/lib/origin";
+import { currentWeekStart, generateReport, sendReport } from "@/lib/report";
 import { THEME_COOKIE, isTheme, type Theme } from "@/lib/theme";
 import { actionUserId } from "@/lib/session";
 
@@ -73,6 +75,34 @@ export async function setTheme(theme: Theme): Promise<SettingsResult> {
   return ok(
     theme === "auto" ? "Thème automatique : l'affichage suit le réglage de l'appareil." : theme === "light" ? "Thème clair appliqué." : "Thème sombre appliqué.",
   );
+}
+
+/* ---------- Notifications ---------- */
+
+export async function setWeeklyEmail(on: boolean): Promise<SettingsResult> {
+  const userId = await actionUserId();
+  const value = on === true;
+  await db
+    .insert(schema.userSettings)
+    .values({ userId, weeklyEmail: value })
+    .onConflictDoUpdate({ target: schema.userSettings.userId, set: { weeklyEmail: value, updatedAt: sql`now()` } });
+  return ok(value ? "Le rapport hebdomadaire sera envoyé chaque dimanche à 20 h." : "Le rapport hebdomadaire ne sera plus envoyé par e-mail.");
+}
+
+/** Rapport d'essai : celui de la semaine en cours, enregistré puis envoyé à l'adresse du compte. */
+export async function sendTestReport(): Promise<SettingsResult> {
+  const userId = await actionUserId();
+  const user = (await auth.api.getSession({ headers: await headers() }))?.user;
+  if (!user) return fail("Session expirée. Reconnectez-vous.");
+  try {
+    const report = await generateReport(userId, currentWeekStart());
+    const sent = await sendReport({ email: user.email, reportId: report.id, data: report.data, origin: await appOrigin() });
+    if (!sent) return fail("L'e-mail n'a pas pu être envoyé. Réessayez dans un instant.");
+    revalidatePath("/rapports");
+    return ok(`Rapport d'essai envoyé à ${user.email}.`);
+  } catch {
+    return fail("Le rapport n'a pas pu être préparé. Réessayez.");
+  }
 }
 
 /* ---------- Profil ---------- */
@@ -148,6 +178,7 @@ export async function resetAccount(input: { word: string; password: string }): P
     db.execute(sql`delete from monthly_budgets where user_id = ${userId}`),
     db.execute(sql`delete from budget_lines where user_id = ${userId}`),
     db.execute(sql`delete from people where user_id = ${userId}`),
+    db.execute(sql`delete from weekly_reports where user_id = ${userId}`),
     db.execute(sql`delete from user_settings where user_id = ${userId}`),
   ]);
   await auth.api.revokeOtherSessions({ headers: await headers() });

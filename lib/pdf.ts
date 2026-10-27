@@ -7,7 +7,7 @@ import { LineCapStyle, PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPa
 // Un PDF ne lit pas les variables CSS : comme pour les e-mails, la palette claire est écrite ici.
 
 const hex = (h: string) => rgb(parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255);
-const C = { ink: hex("#0F2B25"), muted: hex("#4F635B"), line: hex("#D5E0DA"), soft: hex("#F3F7F5"), accent: hex("#0B7A5C"), hero: hex("#0F3B32"), bar: hex("#7FE0B9"), out: hex("#F4A089") };
+const C = { ink: hex("#0F2B25"), muted: hex("#4F635B"), line: hex("#D5E0DA"), soft: hex("#F3F7F5"), alert: hex("#C8372D"), accent: hex("#0B7A5C"), hero: hex("#0F3B32"), bar: hex("#7FE0B9"), out: hex("#F4A089") };
 
 const PAGE_W = 595.28, PAGE_H = 841.89;
 const M = (15 / 25.4) * 72; // 15 mm
@@ -15,8 +15,8 @@ const W = PAGE_W - 2 * M;
 
 export type Column = { label: string; width: number; align?: "left" | "right" };
 /** Cellule null : fusionnée avec la cellule précédente (colspan). */
-/** group : titre de mois ; subtotal : sous-total ; total / end : bas du tableau. */
-export type TableRow = { cells: (string | null)[]; style?: "normal" | "muted" | "bold" | "group" | "subtotal" | "total" | "end" };
+/** group : titre de groupe ; subtotal : sous-total ; total / end : bas du tableau ; alert : ligne signalée (rouge). */
+export type TableRow = { cells: (string | null)[]; style?: "normal" | "muted" | "bold" | "group" | "subtotal" | "total" | "end" | "alert" };
 
 export type TableDoc = {
   title: string;
@@ -79,7 +79,22 @@ function drawLogo(page: PDFPage, x: number, yTop: number, size: number) {
   page.drawSvgPath("M39 16 L50 16 L50 27", { ...stroke, borderColor: C.out });
 }
 
-export async function tablePdf(doc: TableDoc): Promise<Uint8Array> {
+/** Un tableau d'un document à plusieurs sections (rapport hebdomadaire). */
+export type TableSpec = { heading?: string; note?: string; columns: Column[]; rows: TableRow[]; empty?: string; footer?: TableRow[] };
+export type MultiDoc = Omit<TableDoc, "columns" | "rows" | "empty" | "footer"> & { tables: TableSpec[] };
+
+/** Document d'un seul tableau (relevé, sorties filtrées). */
+export function tablePdf(doc: TableDoc): Promise<Uint8Array> {
+  const { columns, rows, empty, footer, ...head } = doc;
+  return documentPdf({ ...head, tables: [{ columns, rows, empty, footer }] });
+}
+
+/**
+ * Document A4 portrait à une ou plusieurs sections : en-tête (logo, titre, bloc à droite) sur la première page,
+ * puis chaque tableau avec son titre ; l'en-tête de colonnes est répété à chaque saut de page et aucune ligne
+ * n'est coupée entre deux pages.
+ */
+export async function documentPdf(doc: MultiDoc): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   pdf.setTitle(doc.title);
   pdf.setCreator("Mawnytrack");
@@ -89,43 +104,46 @@ export async function tablePdf(doc: TableDoc): Promise<Uint8Array> {
   const italic = await pdf.embedFont(StandardFonts.HelveticaOblique);
 
   const size = 10, lineH = 13, padY = 5, padX = 4;
-  const total = doc.columns.reduce((a, c) => a + c.width, 0);
-  const widths = doc.columns.map((c) => (c.width / total) * W);
-  const xs = widths.map((_, i) => M + widths.slice(0, i).reduce((a, b) => a + b, 0));
-
   let page!: PDFPage;
   let y = 0;
   const pages: PDFPage[] = [];
+  let table!: TableSpec;
+  let widths: number[] = [];
+  let xs: number[] = [];
 
-  const header = (first: boolean) => {
+  const newPage = () => {
     page = pdf.addPage([PAGE_W, PAGE_H]);
     pages.push(page);
     y = PAGE_H - M;
-    if (first) {
-      drawLogo(page, M, y, 22);
-      page.drawText("Mawny", { x: M + 28, y: y - 16, size: 15, font: bold, color: C.ink });
-      page.drawText("track", { x: M + 28 + bold.widthOfTextAtSize("Mawny", 15), y: y - 16, size: 15, font: bold, color: C.accent });
-      if (doc.subtitle) page.drawText(safe(regular, doc.subtitle), { x: M, y: y - 36, size: 10, font: regular, color: C.muted });
-      if (doc.right) {
-        const [a, b] = doc.right;
-        const ta = safe(bold, a);
-        page.drawText(ta, { x: M + W - bold.widthOfTextAtSize(ta, 12), y: y - 14, size: 12, font: bold, color: C.ink });
-        if (b) {
-          const tb = safe(regular, b);
-          page.drawText(tb, { x: M + W - regular.widthOfTextAtSize(tb, 10), y: y - 30, size: 10, font: regular, color: C.muted });
-        }
+  };
+
+  const docHeader = () => {
+    drawLogo(page, M, y, 22);
+    page.drawText("Mawny", { x: M + 28, y: y - 16, size: 15, font: bold, color: C.ink });
+    page.drawText("track", { x: M + 28 + bold.widthOfTextAtSize("Mawny", 15), y: y - 16, size: 15, font: bold, color: C.accent });
+    if (doc.subtitle) page.drawText(safe(regular, doc.subtitle), { x: M, y: y - 36, size: 10, font: regular, color: C.muted });
+    if (doc.right) {
+      const [a, b] = doc.right;
+      const ta = safe(bold, a);
+      page.drawText(ta, { x: M + W - bold.widthOfTextAtSize(ta, 12), y: y - 14, size: 12, font: bold, color: C.ink });
+      if (b) {
+        const tb = safe(regular, b);
+        page.drawText(tb, { x: M + W - regular.widthOfTextAtSize(tb, 10), y: y - 30, size: 10, font: regular, color: C.muted });
       }
-      y -= doc.subtitle || doc.right ? 46 : 28;
-      page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: 1.5, color: C.ink });
-      y -= 18;
-      for (const l of wrap(bold, 13, safe(bold, doc.title), W)) {
-        page.drawText(l, { x: M, y, size: 13, font: bold, color: C.ink });
-        y -= 17;
-      }
-      y -= 4;
     }
-    // En-tête du tableau, répété sur chaque page
-    doc.columns.forEach((c, i) => {
+    y -= doc.subtitle || doc.right ? 46 : 28;
+    page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: 1.5, color: C.ink });
+    y -= 18;
+    for (const l of wrap(bold, 13, safe(bold, doc.title), W)) {
+      page.drawText(l, { x: M, y, size: 13, font: bold, color: C.ink });
+      y -= 17;
+    }
+    y -= 4;
+  };
+
+  // En-tête de colonnes du tableau courant, répété sur chaque page
+  const columnsHeader = () => {
+    table.columns.forEach((c, i) => {
       const t = safe(bold, c.label.toUpperCase());
       const w = bold.widthOfTextAtSize(t, 8);
       const x = c.align === "right" ? xs[i] + widths[i] - padX - w : xs[i] + padX;
@@ -136,21 +154,24 @@ export async function tablePdf(doc: TableDoc): Promise<Uint8Array> {
   };
 
   const drawRow = (row: TableRow) => {
-    const strong = row.style === "bold" || row.style === "group" || row.style === "subtotal" || row.style === "total" || row.style === "end";
+    const strong = row.style === "bold" || row.style === "group" || row.style === "subtotal" || row.style === "total" || row.style === "end" || row.style === "alert";
     const font = strong ? bold : row.style === "muted" ? italic : regular;
-    const color = row.style === "muted" || row.style === "subtotal" ? C.muted : row.style === "group" ? C.accent : C.ink;
+    const color =
+      row.style === "muted" || row.style === "subtotal" ? C.muted : row.style === "group" ? C.accent : row.style === "alert" ? C.alert : C.ink;
     const fsize = row.style === "end" ? 11 : size;
-    // Cellules fusionnées (null) : la largeur s'ajoute à la cellule précédente
+    // Cellules fusionnées (null) : la largeur s'ajoute à la cellule précédente, qui garde son alignement
     const cells: { text: string; x: number; w: number; align: "left" | "right" }[] = [];
     row.cells.forEach((t, i) => {
-      // Une cellule fusionnée garde l'alignement de sa première colonne
       if (t === null && cells.length) cells[cells.length - 1].w += widths[i];
-      else cells.push({ text: safe(font, t ?? ""), x: xs[i], w: widths[i], align: doc.columns[i].align ?? "left" });
+      else cells.push({ text: safe(font, t ?? ""), x: xs[i], w: widths[i], align: table.columns[i].align ?? "left" });
     });
     const lines = cells.map((c) => (c.align === "right" ? [c.text] : wrap(font, fsize, c.text, c.w - 2 * padX)));
     const h = Math.max(...lines.map((l) => l.length)) * lineH + 2 * padY;
-    // Un titre de mois n'est jamais laissé seul en bas de page
-    if (y - h * (row.style === "group" ? 2 : 1) < M + 16) header(false);
+    // Un titre de groupe n'est jamais laissé seul en bas de page
+    if (y - h * (row.style === "group" ? 2 : 1) < M + 16) {
+      newPage();
+      columnsHeader();
+    }
     if (row.style === "group") page.drawRectangle({ x: M, y: y - h, width: W, height: h, color: C.soft });
     if (row.style === "total") page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: 1.5, color: C.ink });
     cells.forEach((c, k) => {
@@ -164,10 +185,30 @@ export async function tablePdf(doc: TableDoc): Promise<Uint8Array> {
     if (row.style !== "total" && row.style !== "end") page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: 0.5, color: C.line });
   };
 
-  header(true);
-  if (doc.rows.length) doc.rows.forEach(drawRow);
-  else drawRow({ cells: [doc.empty ?? "Aucun mouvement.", ...doc.columns.slice(1).map(() => null)], style: "muted" });
-  for (const r of doc.footer ?? []) drawRow(r);
+  newPage();
+  docHeader();
+  doc.tables.forEach((t, ti) => {
+    table = t;
+    const total = t.columns.reduce((a, c) => a + c.width, 0);
+    widths = t.columns.map((c) => (c.width / total) * W);
+    xs = widths.map((_, i) => M + widths.slice(0, i).reduce((a, b) => a + b, 0));
+    // Titre de section gardé avec l'en-tête du tableau et au moins une ligne
+    const headH = (t.heading ? 22 : 0) + (t.note ? 14 : 0) + 16 + 24;
+    if (ti > 0) y -= 14;
+    if (y - headH < M + 16) newPage();
+    if (t.heading) {
+      page.drawText(safe(bold, t.heading), { x: M, y: y - 13, size: 12, font: bold, color: C.ink });
+      y -= 20;
+    }
+    if (t.note) {
+      page.drawText(safe(regular, t.note), { x: M, y: y - 9, size: 9, font: regular, color: C.muted });
+      y -= 14;
+    }
+    columnsHeader();
+    if (t.rows.length) t.rows.forEach(drawRow);
+    else drawRow({ cells: [t.empty ?? "Aucun mouvement.", ...t.columns.slice(1).map(() => null)], style: "muted" });
+    for (const r of t.footer ?? []) drawRow(r);
+  });
 
   pages.forEach((p, i) => {
     const t = `Page ${i + 1} / ${pages.length}`;

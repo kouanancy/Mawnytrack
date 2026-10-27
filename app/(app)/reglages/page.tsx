@@ -7,8 +7,8 @@ import pkg from "@/package.json";
 export default async function Page() {
   const user = await requireUser();
   const [row] = await db
-    .select({ theme: schema.userSettings.theme })
+    .select({ theme: schema.userSettings.theme, weeklyEmail: schema.userSettings.weeklyEmail })
     .from(schema.userSettings)
     .where(eq(schema.userSettings.userId, user.id));
-  return <SettingsView name={user.name} email={user.email} theme={row?.theme ?? "auto"} version={pkg.version} />;
+  return <SettingsView name={user.name} email={user.email} theme={row?.theme ?? "auto"} weeklyEmail={row?.weeklyEmail ?? true} version={pkg.version} />;
 }
