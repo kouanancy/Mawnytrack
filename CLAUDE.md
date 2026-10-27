@@ -28,10 +28,17 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - `APP_TIMEZONE` (facultatif, défaut `Africa/Abidjan`) : fuseau des bornes de mois et de journée.
 
 ## Migrations SQL
-- Un fichier complet par étape dans `db/migrations/NNN_nom.sql`, copiable tel quel dans l'éditeur SQL de Neon.
-- **Ne jamais modifier un fichier de migration déjà livré** : créer le fichier suivant (003_…, 004_…).
+- Un fichier complet par étape dans `db/migrations/NNN_nom.sql` (003_…, 004_…), appliqué dans l'ordre des noms.
+- Application automatique : `scripts/migrate.mjs` s'exécute avant `next build` (script `build`, donc à chaque
+  déploiement Vercel). Il applique chaque fichier absent de la table `_migrations`, dans sa propre transaction,
+  puis l'y enregistre. Un échec annule le fichier et arrête le déploiement. Lancement manuel : `npm run migrate`.
+  Connexion : `DATABASE_URL_UNPOOLED` si présente, sinon `DATABASE_URL`.
+- Le script découpe les fichiers en instructions (commentaires, chaînes et blocs `$$ … $$` gérés). Pas d'instruction
+  interdite en transaction (`CREATE INDEX CONCURRENTLY`, `VACUUM`, etc.) dans un fichier de migration.
+- **Ne jamais modifier ni renommer un fichier de migration déjà livré** (il ne serait pas réappliqué) :
+  créer le fichier suivant.
 - `lib/db/schema.ts` est le miroir Drizzle des migrations ; le mettre à jour à chaque nouvelle migration.
-- Terminer chaque livraison par la liste des fichiers SQL à exécuter dans Neon, dans l'ordre.
+- Terminer chaque livraison en indiquant les nouveaux fichiers de migration (appliqués au prochain déploiement).
 
 ## Règles métier
 - Montants en FCFA, entiers (`bigint`), affichés avec séparateur d'espace (`fmt` dans `lib/format.ts`).
