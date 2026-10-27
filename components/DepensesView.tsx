@@ -12,9 +12,9 @@ import type { Entry, MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount, plural } from "@/lib/format";
 import { checkExpense, defaultLabel, isExhausted, lineGroups, reduce, stamp, summary, tempId } from "@/lib/ledger";
 
-type Props = { data: MonthData; month: string; monthName: string; today: string; tz: string; budgetHref: string };
+type Props = { data: MonthData; month: string; monthName: string; today: string; tz: string; budgetHref: string; revenusHref: string };
 
-export function DepensesView({ data, month, monthName, today, tz, budgetHref }: Props) {
+export function DepensesView({ data, month, monthName, today, tz, budgetHref, revenusHref }: Props) {
   const [view, addOp] = useOptimistic(data, reduce);
   const [, startTransition] = useTransition();
   const toast = useToast();
@@ -88,8 +88,8 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref }: 
   }
 
   return (
-    <>
-      <div className="noprint stack">
+    <div className="cols">
+      <div className="noprint stack col">
         <section className="hero" aria-label="Reste disponible">
           <div className="lbl">Reste disponible</div>
           <div className={`big num${rest < 0 ? " neg" : ""}`}>
@@ -126,12 +126,24 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref }: 
         </section>
 
         {view.lines.length === 0 ? (
-          <div className="quick">
-            <p className="empty" style={{ padding: 8 }}>
-              Créez d&apos;abord une ligne dans l&apos;onglet Budget pour classer les dépenses.
-            </p>
+          <div className="quick welcome">
+            <h2>Bienvenue dans Mawnytrack</h2>
+            <p className="hint">Pour commencer :</p>
+            <ol>
+              <li>
+                Créez une première <b>ligne de budget</b> (par exemple Repas, Transport ou Loyer) dans la section Budget :
+                chaque dépense y sera classée.
+              </li>
+              <li>
+                Enregistrez un premier <b>revenu</b> dans la section Revenus : le reste disponible du mois se calcule à
+                partir des revenus.
+              </li>
+            </ol>
             <Link className="btn" href={budgetHref}>
               Créer une ligne de budget
+            </Link>
+            <Link className="btn ghost" href={revenusHref}>
+              Ajouter un revenu
             </Link>
           </div>
         ) : (
@@ -201,41 +213,43 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref }: 
         )}
       </div>
 
-      <div className="printonly">
-        <Brand size={22} style={{ fontSize: 18 }} />
-        <b>
-          Sorties de {monthName} · {cur}
-        </b>
+      <div className="col">
+        <div className="printonly">
+          <Brand size={22} style={{ fontSize: 18 }} />
+          <b>
+            Sorties de {monthName} · {cur}
+          </b>
+        </div>
+        <div className="sect">
+          <h2>Sorties du mois</h2>
+          <span className="num">
+            {entries.length} {plural(entries.length, "ligne", "lignes")} · {fmt(filtered)} FCFA
+          </span>
+        </div>
+        <div className="ftools noprint">
+          <CategoryFilter lines={view.lines} value={activeFilter} onChange={setFilter} />
+          <button
+            type="button"
+            className="iconbtn"
+            aria-label={`Imprimer ${cur}`}
+            title="Imprimer l'affichage"
+            onClick={() => window.print()}
+          >
+            <IcoPrint />
+          </button>
+        </div>
+        <Journal
+          entries={entries}
+          mode="out"
+          today={today}
+          empty={activeFilter ? "Aucune sortie dans cette catégorie ce mois-ci." : "Aucune sortie ce mois-ci. La première saisie apparaîtra ici."}
+          onDelete={remove}
+        />
+        <div className="printonly ptotal">
+          <span>Total {cur}</span>
+          <b className="num">{fmt(filtered)} FCFA</b>
+        </div>
       </div>
-      <div className="sect">
-        <h2>Sorties du mois</h2>
-        <span className="num">
-          {entries.length} {plural(entries.length, "ligne", "lignes")} · {fmt(filtered)} FCFA
-        </span>
-      </div>
-      <div className="ftools noprint">
-        <CategoryFilter lines={view.lines} value={activeFilter} onChange={setFilter} />
-        <button
-          type="button"
-          className="iconbtn"
-          aria-label={`Imprimer ${cur}`}
-          title="Imprimer l'affichage"
-          onClick={() => window.print()}
-        >
-          <IcoPrint />
-        </button>
-      </div>
-      <Journal
-        entries={entries}
-        mode="out"
-        today={today}
-        empty={activeFilter ? "Aucune sortie dans cette catégorie ce mois-ci." : "Aucune sortie ce mois-ci. La première saisie apparaîtra ici."}
-        onDelete={remove}
-      />
-      <div className="printonly ptotal">
-        <span>Total {cur}</span>
-        <b className="num">{fmt(filtered)} FCFA</b>
-      </div>
-    </>
+    </div>
   );
 }

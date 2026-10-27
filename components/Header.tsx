@@ -1,22 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { IcoBack, IcoCheck, IcoChev, IcoMenu } from "@/components/Icons";
-import { authClient } from "@/lib/auth-client";
-import { isValidMonth, monthLabel, shiftMonth } from "@/lib/month";
-import { SECTIONS, sectionOf } from "@/lib/sections";
+import { monthLabel, shiftMonth } from "@/lib/month";
+import { SECTIONS, SETTINGS } from "@/lib/sections";
+import { useNav } from "@/lib/use-nav";
 
-/** En-tête : menu des sections, logo, sélecteur de mois, puis titre de la section. */
+/**
+ * En-tête : menu à trois traits (téléphone et tablette portrait), logo, sélecteur de mois, puis titre de
+ * la section. Sur grand écran, le menu et le logo passent dans la barre latérale (voir globals.css).
+ */
 export function Header({ current }: { current: string }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const params = useSearchParams();
-  const section = sectionOf(pathname);
-  const m = params.get("m");
-  const month = isValidMonth(m) ? m : current;
+  const { pathname, section, month, withMonth, signOut } = useNav(current);
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
@@ -41,18 +38,20 @@ export function Header({ current }: { current: string }) {
     };
   }, [open]);
 
-  // Le mois choisi suit la navigation entre sections ; le mois en cours n'apparaît pas dans l'URL.
-  const withMonth = (href: string, mo: string) => (mo === current ? href : `${href}?m=${mo}`);
-
-  async function signOut() {
-    setOpen(false);
-    await authClient.signOut();
-    router.replace("/connexion");
-    router.refresh();
-  }
+  const item = (s: typeof SETTINGS) => {
+    const here = s.href === section.href;
+    return (
+      <li key={s.href}>
+        <Link href={withMonth(s.href)} role="menuitem" aria-current={here ? "page" : undefined} onClick={() => setOpen(false)}>
+          <span className="on">{s.name}</span>
+          {here ? <IcoCheck /> : !s.ready && <span className="soon-tag">Bientôt</span>}
+        </Link>
+      </li>
+    );
+  };
 
   return (
-    <div className="noprint stack">
+    <div className="noprint stack page-head">
       <header className="top">
         <div className="lead">
           <div className="mdrop" ref={wrap}>
@@ -70,25 +69,19 @@ export function Header({ current }: { current: string }) {
             {open && (
               <div className="fpop mpop" role="menu">
                 <ul>
-                  {SECTIONS.map((s) => {
-                    const here = s.href === section.href;
-                    return (
-                      <li key={s.href}>
-                        <Link
-                          href={withMonth(s.href, month)}
-                          role="menuitem"
-                          aria-current={here ? "page" : undefined}
-                          onClick={() => setOpen(false)}
-                        >
-                          <span className="on">{s.name}</span>
-                          {here ? <IcoCheck /> : !s.ready && <span className="soon-tag">Bientôt</span>}
-                        </Link>
-                      </li>
-                    );
-                  })}
+                  {SECTIONS.map(item)}
                   <li className="sep" role="separator" />
+                  {item(SETTINGS)}
                   <li>
-                    <button type="button" role="menuitem" className="mitem" onClick={signOut}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="mitem"
+                      onClick={() => {
+                        setOpen(false);
+                        signOut();
+                      }}
+                    >
                       <span className="on">Se déconnecter</span>
                     </button>
                   </li>

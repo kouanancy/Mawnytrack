@@ -9,4 +9,8 @@ export const SECTIONS: Section[] = [
   { href: "/investissements", name: "Investissements", ready: false, month: false },
 ];
 
-export const sectionOf = (pathname: string) => SECTIONS.find((s) => pathname.startsWith(s.href)) ?? SECTIONS[0];
+/** Réglages : en bas du menu et de la barre latérale, sans sélecteur de mois. */
+export const SETTINGS: Section = { href: "/reglages", name: "Réglages", ready: true, month: false };
+
+export const sectionOf = (pathname: string) =>
+  [...SECTIONS, SETTINGS].find((s) => pathname.startsWith(s.href)) ?? SECTIONS[0];

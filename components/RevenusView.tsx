@@ -57,60 +57,64 @@ export function RevenusView({ data, month, today, tz }: { data: MonthData; month
   }
 
   return (
-    <>
-      <div className="tiles">
-        <div className="tile">
-          <span>Revenus du mois</span>
-          <strong className="num" style={{ color: "var(--in)" }}>
-            +{fmt(view.totals.income)}
-          </strong>
-        </div>
-        <div className="tile">
-          <span>Reste disponible</span>
-          <strong className="num">{fmt(rest)}</strong>
-        </div>
-      </div>
-      <form className="quick" aria-label="Ajouter un revenu" onSubmit={submit}>
-        <div className="row">
-          <div className="field amount">
-            <label htmlFor="r-amt">Montant (FCFA)</label>
-            <input
-              id="r-amt"
-              ref={amountRef}
-              inputMode="numeric"
-              placeholder="0"
-              autoComplete="off"
-              required
-              value={amount}
-              onChange={(e) => setAmount(formatInput(e.target.value))}
-            />
+    <div className="cols">
+      <div className="stack col">
+        <div className="tiles">
+          <div className="tile">
+            <span>Revenus du mois</span>
+            <strong className="num" style={{ color: "var(--in)" }}>
+              +{fmt(view.totals.income)}
+            </strong>
           </div>
-          <div className="field" style={{ flex: "2 1 160px" }}>
-            <label htmlFor="r-lbl">Source</label>
-            <input
-              id="r-lbl"
-              placeholder="Ex. salaire, vente, prime…"
-              autoComplete="off"
-              maxLength={120}
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-            />
+          <div className="tile">
+            <span>Reste disponible</span>
+            <strong className="num">{fmt(rest)}</strong>
           </div>
         </div>
-        <button className="btn" type="submit">
-          Ajouter le revenu
-        </button>
-      </form>
-      <div className="sect">
-        <h2>Revenus enregistrés</h2>
+        <form className="quick" aria-label="Ajouter un revenu" onSubmit={submit}>
+          <div className="row">
+            <div className="field amount">
+              <label htmlFor="r-amt">Montant (FCFA)</label>
+              <input
+                id="r-amt"
+                ref={amountRef}
+                inputMode="numeric"
+                placeholder="0"
+                autoComplete="off"
+                required
+                value={amount}
+                onChange={(e) => setAmount(formatInput(e.target.value))}
+              />
+            </div>
+            <div className="field" style={{ flex: "2 1 160px" }}>
+              <label htmlFor="r-lbl">Source</label>
+              <input
+                id="r-lbl"
+                placeholder="Ex. salaire, vente, prime…"
+                autoComplete="off"
+                maxLength={120}
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+              />
+            </div>
+          </div>
+          <button className="btn" type="submit">
+            Ajouter le revenu
+          </button>
+        </form>
       </div>
-      <Journal
-        entries={view.entries}
-        mode="in"
-        today={today}
-        empty="Aucun revenu ce mois-ci. Ajoutez le premier ci-dessus."
-        onDelete={remove}
-      />
-    </>
+      <div className="col">
+        <div className="sect">
+          <h2>Revenus enregistrés</h2>
+        </div>
+        <Journal
+          entries={view.entries}
+          mode="in"
+          today={today}
+          empty="Aucun revenu ce mois-ci. Ajoutez le premier ci-dessus."
+          onDelete={remove}
+        />
+      </div>
+    </div>
   );
 }

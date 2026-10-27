@@ -9,7 +9,7 @@ Suivi des finances personnelles en FCFA : dépenses, revenus et budget du mois.
 
 1. Les migrations de `db/migrations/` s'appliquent automatiquement avant chaque compilation (`npm run build`,
    donc à chaque déploiement Vercel). Lancement manuel : `npm run migrate`.
-2. Variables d'environnement (voir `.env.example`) : `DATABASE_URL` (et `DATABASE_URL_UNPOOLED` si disponible), `BETTER_AUTH_SECRET`.
+2. Variables d'environnement (voir `.env.example`) : `DATABASE_URL` (et `DATABASE_URL_UNPOOLED` si disponible), `BETTER_AUTH_SECRET`, `RESEND_API_KEY`.
 3. `npm install` puis `npm run dev`.
 
 ## Scripts
