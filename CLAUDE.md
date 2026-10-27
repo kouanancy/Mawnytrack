@@ -73,3 +73,7 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 
 ## Vérifications avant commit
 - `npm run typecheck` et `npm run build`.
+
+## Livraison
+- À chaque livraison : pousser la branche de travail, ouvrir une pull request vers `main`, puis la fusionner.
+- Après une fusion, repartir de `main` à jour pour la suite du travail.
