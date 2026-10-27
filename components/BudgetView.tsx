@@ -151,11 +151,6 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
             <output className="num">{fmt(l.spent)}</output>
           </div>
         </div>
-        {l.planned > 0 && (
-          <div className="lbar">
-            <i className={st.state} style={{ width: `${st.pct}%` }} />
-          </div>
-        )}
         {(st.state !== "free" || l.direction !== "lent") && <div className="bl-msg num">{msg}</div>}
         {l.direction === "lent" && (
           // Accordé cumulé sur toute la durée : prêts − remboursements

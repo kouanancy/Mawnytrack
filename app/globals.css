@@ -498,3 +498,35 @@ body.pv-open{overflow:hidden}
 }
 .sheet .st-month td{background:var(--surface-2);color:var(--accent);font-weight:700;padding-top:10px}
 .sheet .st-sub td{color:var(--muted);font-weight:700;border-bottom:1.5px solid var(--line)}
+
+/* ---------- Relevé : tient dans la largeur d'un téléphone, montants sous leurs colonnes ---------- */
+.nowrap{white-space:nowrap}
+.sheet .r,.sheet tfoot th.r{text-align:right;white-space:nowrap}
+.th-short{display:none}
+.sheet tfoot .end th{vertical-align:bottom}
+@media (max-width:480px){
+  .sheet{padding:14px 12px}
+  .sheet table{min-width:0;font-size:12px}
+  .sheet th,.sheet td{padding:7px 4px}
+  .sheet thead th{font-size:10px;letter-spacing:.03em}
+  .th-long{display:none}
+  .th-short{display:inline}
+  .sheet tfoot .end th{font-size:13px}
+}
+@media print{.th-long{display:inline}.th-short{display:none}}
+
+/* ---------- Champs date : valeur centrée verticalement et alignée à gauche (Safari iOS) ---------- */
+input[type="date"],input[type="time"],input[type="datetime-local"],input[type="month"]{
+  display:flex;align-items:center;font:inherit;font-size:15px;line-height:42px;padding:0 12px}
+input[type="date"]::-webkit-date-and-time-value,input[type="time"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value,input[type="month"]::-webkit-date-and-time-value{
+  text-align:left;margin:0;padding:0;line-height:42px;min-height:42px}
+input[type="date"]::-webkit-datetime-edit{padding:0;line-height:42px}
+
+/* ---------- En-tête sur téléphone : logo centré sur toute la largeur, menu à gauche ---------- */
+@media (max-width:767px){
+  .page-head header.top{justify-content:flex-start}
+  .page-head .lead{flex:1 0 100%;position:relative;justify-content:center;min-height:40px}
+  .page-head .lead .mdrop{position:absolute;left:0;top:50%;transform:translateY(-50%)}
+  .page-head .lead .mpop{top:calc(100% + 6px)}
+}
