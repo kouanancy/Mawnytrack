@@ -16,6 +16,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ m
       today={localDayTime(new Date(), APP_TZ).day}
       tz={APP_TZ}
       budgetHref={month === currentMonth() ? "/budget" : `/budget?m=${month}`}
+      revenusHref={month === currentMonth() ? "/revenus" : `/revenus?m=${month}`}
     />
   );
 }

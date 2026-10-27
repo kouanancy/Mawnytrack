@@ -4,12 +4,15 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 
-/** Identifiant de l'utilisateur connecté ; redirige vers la connexion sinon. Mis en cache par requête. */
-export const requireUserId = cache(async (): Promise<string> => {
+/** Utilisateur connecté ; redirige vers la connexion sinon. Mis en cache par requête. */
+export const requireUser = cache(async () => {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/connexion");
-  return session.user.id;
+  return session.user;
 });
+
+/** Identifiant de l'utilisateur connecté ; redirige vers la connexion sinon. */
+export const requireUserId = async (): Promise<string> => (await requireUser()).id;
 
 /** Variante pour les Server Actions : lève une erreur au lieu de rediriger. */
 export async function actionUserId(): Promise<string> {

@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Figtree } from "next/font/google";
+import { cookies } from "next/headers";
+import { THEME_COOKIE } from "@/lib/theme";
 import "./globals.css";
 
 const display = Bricolage_Grotesque({ subsets: ["latin"], axes: ["opsz"], variable: "--font-bricolage", display: "swap" });
@@ -19,21 +21,34 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, title: "Mawnytrack", statusBarStyle: "default" },
 };
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-  // Contrôles natifs, barres de défilement et fond initial suivent le réglage clair/sombre de l'appareil
-  colorScheme: "light dark",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#E9F0EC" },
-    { media: "(prefers-color-scheme: dark)", color: "#0B1714" },
-  ],
-};
+export async function generateViewport(): Promise<Viewport> {
+  const theme = (await cookies()).get(THEME_COOKIE)?.value;
+  const light = "#E9F0EC", dark = "#0B1714";
+  return {
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover",
+    // Contrôles natifs, barres de défilement et fond initial suivent le thème (appareil ou choix des Réglages)
+    colorScheme: theme === "light" ? "light" : theme === "dark" ? "dark" : "light dark",
+    themeColor:
+      theme === "light" || theme === "dark"
+        ? theme === "light" ? light : dark
+        : [
+            { media: "(prefers-color-scheme: light)", color: light },
+            { media: "(prefers-color-scheme: dark)", color: dark },
+          ],
+  };
+}
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Thème choisi dans les Réglages, posé dès le rendu serveur : aucun flash de la mauvaise couleur.
+  const theme = (await cookies()).get(THEME_COOKIE)?.value;
   return (
-    <html lang="fr" className={`${display.variable} ${body.variable}`}>
+    <html
+      lang="fr"
+      className={`${display.variable} ${body.variable}`}
+      data-theme={theme === "light" || theme === "dark" ? theme : undefined}
+    >
       <body>{children}</body>
     </html>
   );

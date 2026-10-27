@@ -175,7 +175,7 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
           <strong className={`num${rest < 0 ? " bad" : ""}`}>{fmt(rest)}</strong>
         </div>
         {planned > income ? (
-          <p className="bad" style={{ gridColumn: "1/-1", margin: 0, fontSize: 13 }}>
+          <p className="bad sum-warn">
             Le budget prévu dépasse les revenus de {fmt(planned - income)} FCFA.
           </p>
         ) : (
@@ -194,7 +194,7 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
         </span>
       </div>
       {budget.length ? (
-        budget.map(card)
+        <div className="lines-grid">{budget.map(card)}</div>
       ) : (
         <div className="list">
           <div className="empty">Aucune ligne. Ajoutez par exemple Repas, Transport ou Loyer.</div>
@@ -232,7 +232,7 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
             <h2>Prêts accordés</h2>
             <span>Liés au volet Prêts</span>
           </div>
-          {lent.map(card)}
+          <div className="lines-grid">{lent.map(card)}</div>
         </>
       )}
       {borrowed.length > 0 && (
@@ -241,7 +241,7 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
             <h2>Remboursements d&apos;emprunts</h2>
             <span>Budget mensuel de remboursement</span>
           </div>
-          {borrowed.map(card)}
+          <div className="lines-grid">{borrowed.map(card)}</div>
         </>
       )}
     </>

@@ -1,5 +1,5 @@
 /* Reprise fidèle du prototype validé (docs/prototype-mawnytrack.html), palette Forêt.
-   Colonne d'appli mobile (max 480px), modes clair et sombre. */
+   Téléphone : colonne de 480px comme le prototype ; tablette et ordinateur : voir « Multi-écran » en fin de fichier. */
 :root{
   /* Valeurs claires */
   --bg:#E9F0EC; --surface:#FFFFFF; --surface-2:#F3F7F5; --line:#D5E0DA;
@@ -17,9 +17,10 @@
   --f-body:var(--font-figtree), "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme:light;
 }
-/* Mode sombre : suit automatiquement le réglage de l'appareil */
+/* Mode sombre. Thème « Automatique » (aucun data-theme sur <html>) : suit le réglage de l'appareil.
+   Thème choisi dans les Réglages : <html data-theme="light|dark">, posé côté serveur (pas de flash). */
 @media (prefers-color-scheme: dark){
-  :root{
+  :root:not([data-theme="light"]){
     --bg:#0B1714; --surface:#12221E; --surface-2:#182B26; --line:#25403A;
     --ink:#E6F1ED; --muted:#9DB6AD;
     --hero:#164A3F; --hero-ink:#F1F7F4; --hero-muted:#A9C7BC;
@@ -30,6 +31,17 @@
     --shadow:rgba(0,0,0,.45); --shadow-sm:rgba(0,0,0,.3);
     color-scheme:dark;
   }
+}
+:root[data-theme="dark"]{
+    --bg:#0B1714; --surface:#12221E; --surface-2:#182B26; --line:#25403A;
+    --ink:#E6F1ED; --muted:#9DB6AD;
+    --hero:#164A3F; --hero-ink:#F1F7F4; --hero-muted:#A9C7BC;
+    --in:#4CCB9F; --in-soft:#173A30;
+    --out:#F4A089; --out-soft:#3B221D;
+    --alert:#FF8A7E; --alert-soft:#3D1C19;
+    --accent:#4CCB9F; --accent-ink:#06231B; --bar:#7FE0B9;
+    --shadow:rgba(0,0,0,.45); --shadow-sm:rgba(0,0,0,.3);
+    color-scheme:dark;
 }
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;
@@ -233,7 +245,7 @@ header.top{flex-wrap:wrap;row-gap:10px}
 .mbtn{width:40px;height:40px;display:grid;place-items:center;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .mbtn[aria-expanded="true"]{border-color:var(--accent)}
 .mbtn:hover{border-color:var(--accent);color:var(--accent)}
-.mpop{right:auto;left:0;width:210px;z-index:8}
+.mpop{right:auto;left:0;width:210px;z-index:8;max-height:none}
 .mpop button[aria-current="page"]{background:var(--in-soft);color:var(--in)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
 .chartcard{display:flex;flex-direction:column;gap:8px}
@@ -286,9 +298,62 @@ a{color:inherit}
 .auth-alt{text-align:center;font-size:14px;color:var(--muted);margin:0}
 .auth-alt a{color:var(--accent);font-weight:700;text-decoration:none}
 .auth-alt a:hover{text-decoration:underline}
+/* ---------- Structure des pages (toutes tailles) ---------- */
+.cols,.col,.lines-grid{display:flex;flex-direction:column;gap:16px;min-width:0}
+.sum .sum-warn{grid-column:1/-1;margin:0;font-size:13px}
+.sidebar{display:none}
+.welcome{gap:10px}
+.welcome h2{font-size:20px}
+.welcome .hint{margin:0}
+.welcome ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.soon-card{width:100%}
+
+/* ---------- Multi-écran ----------
+   Téléphone (< 768 px) : colonne de 480 px, identique au prototype.
+   Tablette portrait (768 – 1023 px) : menu à trois traits conservé, colonne de 720 px, grilles de 2 colonnes.
+   Tablette paysage et ordinateur (≥ 1024 px) : barre latérale fixe, contenu centré jusqu'à 1200 px. */
+@media (min-width:768px){
+  body{padding-left:max(24px, env(safe-area-inset-left, 0px));padding-right:max(24px, env(safe-area-inset-right, 0px))}
+  .app{max-width:720px;padding-block:24px 64px}
+  .sum{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .lines-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+  .auth{max-width:440px}
+}
+@media (min-width:1024px){
+  body{padding-left:calc(256px + 40px);padding-right:40px}
+  .sidebar{display:flex;flex-direction:column;gap:20px;position:fixed;top:0;bottom:0;left:0;width:256px;z-index:5;
+    background:var(--surface);border-right:1px solid var(--line);padding:20px 14px;overflow-y:auto}
+  .side-brand{display:block;padding:6px 10px;text-decoration:none;border-radius:10px}
+  .side-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+  .side-list a,.side-list button{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:10px 12px;border:0;
+    border-radius:10px;background:none;color:var(--ink);font-weight:600;font-size:15px;text-align:left;text-decoration:none}
+  .side-list a:hover,.side-list button:hover{background:var(--surface-2)}
+  .side-list a[aria-current="page"]{background:var(--in-soft);color:var(--in)}
+  .side-list .on{flex:1;min-width:0}
+  .side-list .soon-tag{font-size:11px;color:var(--muted);font-weight:600}
+  .side-foot{margin-top:auto;border-top:1px solid var(--line);padding-top:12px}
+  .side-foot button{color:var(--muted)}
+  .app{max-width:1200px;padding-block:32px 64px;gap:20px}
+  .page-head .lead{display:none}
+  .page-head{flex-direction:row-reverse;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+  .page-head header.top{flex:none}
+  .section-title{margin:0;font-size:30px}
+  .cols{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:24px;align-items:start}
+  .cols > .col:first-child{position:sticky;top:32px}
+  .sum{grid-template-columns:repeat(5,minmax(0,1fr));padding:18px}
+  .sum .saving,.sum .sum-warn{grid-column:auto}
+  .sum .saving{padding:10px 12px}
+  .sum .saving strong{font-size:20px}
+  .lines-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .soon-card{max-width:560px}
+  .settings-grid{columns:2;column-gap:24px}
+  .settings-grid > *{break-inside:avoid;margin-bottom:20px}
+}
+@media print{.sidebar{display:none!important}.cols{display:block}.cols > .col{position:static}}
+
 @media print{
-  /* Impression : toujours sur fond blanc, couleurs claires quel que soit le réglage de l'appareil */
-  :root{--bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#FFFFFF; --line:#D5E0DA;
+  /* Impression : toujours sur fond blanc, couleurs claires quel que soit le thème */
+  :root,:root[data-theme],:root:not([data-theme="light"]){--bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#FFFFFF; --line:#D5E0DA;
   --ink:#0F2B25; --muted:#4F635B;
   --hero:#0F3B32; --hero-ink:#F1F7F4; --hero-muted:#A9C7BC;
   --in:#0B7A5C; --in-soft:#DDF1E9;
@@ -300,3 +365,40 @@ a{color:inherit}
   .item{break-inside:avoid}
   .day h3{break-after:avoid}
 }
+
+/* ---------- Champ mot de passe avec « œil » ---------- */
+.pwd{position:relative}
+.pwd input{padding-right:48px}
+.pwd-eye{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:40px;height:36px;border:0;background:none;border-radius:8px;color:var(--muted);display:grid;place-items:center}
+.pwd-eye:hover{color:var(--ink);background:var(--surface)}
+.auth-ok{background:var(--in-soft);color:var(--in);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;margin:0}
+.auth-forgot{align-self:flex-end;font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;margin-top:-4px}
+.auth-forgot:hover{text-decoration:underline}
+
+/* ---------- Réglages ---------- */
+.settings-grid{display:flex;flex-direction:column;gap:16px}
+@media (min-width:1024px){.settings-grid{display:block}}
+.set{display:flex;flex-direction:column;gap:14px}
+.set h2{font-size:20px}
+.set h3{font-size:14px;margin:0;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.set form{display:flex;flex-direction:column;gap:10px;align-items:stretch}
+.set .field,.danger-box .field,.auth .field{flex:none}
+.set form > .btn{align-self:flex-start}
+.set form + form,.set-actions{border-top:1px solid var(--line);padding-top:14px}
+.set-actions{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.set-row{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.set-row > div{flex:1 1 220px;min-width:0}
+.set-row .hint{margin:4px 0 0}
+.set-row + .set-row{border-top:1px solid var(--line);padding-top:14px}
+.set .hint{margin:0}
+.set-ok,.set-err{border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600;margin:0}
+.set-ok{background:var(--in-soft);color:var(--in)}
+.set-err{background:var(--alert-soft);color:var(--alert)}
+.btn.danger{color:var(--alert);border-color:var(--alert)}
+.danger-box{background:var(--alert-soft);border-radius:12px;padding:12px}
+.danger-box .field input{background:var(--surface)}
+.themes{display:flex;flex-direction:column;gap:8px}
+.theme-opt{display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);cursor:pointer;font-weight:600}
+.theme-opt:has(input:checked){border-color:var(--accent);background:var(--in-soft);color:var(--in)}
+.theme-opt input{accent-color:var(--accent);width:18px;height:18px;margin:0}
+.set-about{margin:0}

@@ -110,3 +110,9 @@ export const projectDisbursements = pgTable("project_disbursements", {
   occurredAt: tstz("occurred_at").notNull().defaultNow(),
   createdAt: tstz("created_at").notNull().defaultNow(),
 });
+
+export const userSettings = pgTable("user_settings", {
+  userId: text("user_id").primaryKey(),
+  theme: text("theme", { enum: ["auto", "light", "dark"] }).notNull().default("auto"),
+  updatedAt: tstz("updated_at").notNull().defaultNow(),
+});

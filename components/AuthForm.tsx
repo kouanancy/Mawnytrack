@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { syncThemeCookie } from "@/app/settings-actions";
+import { PasswordInput } from "@/components/PasswordInput";
 import { authClient } from "@/lib/auth-client";
 
 const ERRORS: Record<string, string> = {
@@ -15,7 +17,7 @@ const ERRORS: Record<string, string> = {
   PASSWORD_TOO_LONG: "Le mot de passe est trop long.",
 };
 
-export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
+export function AuthForm({ mode, info }: { mode: "signin" | "signup"; info?: string }) {
   const signup = mode === "signup";
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +45,7 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
       );
       return;
     }
+    await syncThemeCookie();
     router.replace("/depenses");
     router.refresh();
   }
@@ -51,16 +54,20 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
     <>
       <form className="quick" onSubmit={onSubmit} aria-label={signup ? "Créer un compte" : "Connexion"}>
         <h1>{signup ? "Créer un compte" : "Connexion"}</h1>
+        {info && (
+          <p className="auth-ok" role="status">
+            {info}
+          </p>
+        )}
         <div className="field">
           <label htmlFor="email">Adresse e-mail</label>
           <input id="email" name="email" type="email" autoComplete="email" required placeholder="nom@exemple.com" />
         </div>
         <div className="field">
           <label htmlFor="password">Mot de passe</label>
-          <input
+          <PasswordInput
             id="password"
             name="password"
-            type="password"
             autoComplete={signup ? "new-password" : "current-password"}
             required
             minLength={signup ? 8 : undefined}
@@ -70,7 +77,7 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
         {signup && (
           <div className="field">
             <label htmlFor="confirm">Confirmation du mot de passe</label>
-            <input id="confirm" name="confirm" type="password" autoComplete="new-password" required minLength={8} />
+            <PasswordInput id="confirm" name="confirm" autoComplete="new-password" required minLength={8} />
           </div>
         )}
         {error && (
@@ -82,6 +89,11 @@ export function AuthForm({ mode }: { mode: "signin" | "signup" }) {
           {pending ? "Veuillez patienter…" : signup ? "Créer le compte" : "Se connecter"}
         </button>
       </form>
+      {!signup && (
+        <p className="auth-alt">
+          <Link href="/mot-de-passe-oublie">Mot de passe oublié ?</Link>
+        </p>
+      )}
       <p className="auth-alt">
         {signup ? (
           <>
