@@ -7,6 +7,7 @@ export const SECTIONS: Section[] = [
   { href: "/prets", name: "Prêts", ready: true, month: false },
   { href: "/caisse", name: "Caisse", ready: true, month: false },
   { href: "/investissements", name: "Investissements", ready: true, month: false },
+  { href: "/rapports", name: "Rapports", ready: true, month: false },
 ];
 
 /** Réglages : en bas du menu et de la barre latérale, sans sélecteur de mois. */

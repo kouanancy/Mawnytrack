@@ -5,6 +5,8 @@ import { useState, useTransition } from "react";
 import {
   deleteAccount,
   resetAccount,
+  sendTestReport,
+  setWeeklyEmail,
   sendPasswordLink,
   setTheme,
   signOutEverywhere,
@@ -17,7 +19,7 @@ import { useToast } from "@/components/Toast";
 import { authClient } from "@/lib/auth-client";
 import type { Theme } from "@/lib/theme";
 
-type Props = { name: string; email: string; theme: Theme; version: string };
+type Props = { name: string; email: string; theme: Theme; weeklyEmail: boolean; version: string };
 
 const THEME_OPTIONS: { id: Theme; name: string }[] = [
   { id: "auto", name: "Automatique (selon l'appareil)" },
@@ -39,12 +41,13 @@ function Feedback({ res }: { res: SettingsResult | null }) {
   );
 }
 
-export function SettingsView({ name, email, theme, version }: Props) {
+export function SettingsView({ name, email, theme, weeklyEmail, version }: Props) {
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [results, setResults] = useState<Record<string, SettingsResult | null>>({});
   const [currentTheme, setCurrentTheme] = useState<Theme>(theme);
+  const [weekly, setWeekly] = useState(weeklyEmail);
   const [danger, setDanger] = useState<"reset" | "delete" | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
 
@@ -167,6 +170,34 @@ export function SettingsView({ name, email, theme, version }: Props) {
           ))}
         </div>
         <p className="hint">Le choix est enregistré pour ce compte et appliqué sur chaque appareil connecté.</p>
+      </section>
+
+      <section className="card set" aria-labelledby="s-notifications">
+        <h2 id="s-notifications">Notifications</h2>
+        <label className="switch">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={weekly}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setWeekly(on);
+              run("weekly", () => setWeeklyEmail(on), (r) => !r.ok && setWeekly(!on));
+            }}
+          />
+          <span className="switch-ui" aria-hidden="true" />
+          <span>Recevoir le rapport hebdomadaire par e-mail</span>
+        </label>
+        <p className="hint">
+          Chaque dimanche à 20 h, le rapport de la semaine écoulée est envoyé à {email}, avec le rapport complet en PDF.
+          Aucun e-mail n&apos;est envoyé si la semaine ne contient aucun mouvement.
+        </p>
+        <div className="set-actions">
+          <button className="btn ghost sm" type="button" disabled={pending} onClick={() => run("test", sendTestReport)}>
+            M&apos;envoyer un rapport d&apos;essai maintenant
+          </button>
+          <Feedback res={results.test ?? null} />
+        </div>
       </section>
 
       <section className="card set" aria-labelledby="s-donnees">

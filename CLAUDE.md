@@ -27,7 +27,7 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   - Vérifier chaque page à 375, 768, 1024 et 1440 px, en clair et en sombre, sans défilement horizontal.
 - Textes en français, impersonnels, avec vouvoiement (« Saisissez un montant », jamais de tutoiement ni de « je »).
 - Logo : `public/mawnytrack-icon.svg`. Icônes PNG et `app/favicon.ico` générés par `npm run icons`.
-- En-tête : menu à trois traits (Dépenses, Revenus, Budget, Prêts, Caisse, Investissements), logo
+- En-tête : menu à trois traits (Dépenses, Revenus, Budget, Prêts, Caisse, Investissements, Rapports), logo
   « Mawny » couleur texte + « track » en vert, sélecteur de mois (`?m=YYYY-MM`), titre de section en orange rosé.
   Les volets non développés affichent « Bientôt disponible » (`lib/sections.ts`, champ `ready`). Réglages et
   Se déconnecter figurent en bas du menu et de la barre latérale. Sélecteur de mois uniquement sur Dépenses,
@@ -171,6 +171,28 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   bouton désactivé, et contrôle serveur dans une transaction sous verrou consultatif par utilisateur
   (`pg_advisory_xact_lock`), qui sérialise aussi les changements de montant nécessaire.
 
+## Rapports (`/rapports`, `lib/report.ts`, `lib/report-model.ts`, `app/api/cron/weekly-report`)
+- Semaine du lundi au dimanche, fuseau `APP_TIMEZONE` (Africa/Abidjan). Rapport calculé par `computeReport`
+  (lectures groupées en parallèle, agrégats en SQL) puis figé dans `weekly_reports.data` (jsonb, une ligne par
+  utilisateur et par semaine, migration `005_weekly_reports.sql`).
+- Contenu : synthèse (semaine : revenus, emprunts reçus, dépenses ; depuis le 1er du mois : revenus, dépenses,
+  reste disponible ; dettes en cours, caisse), Budget (Ligne · Cette semaine · Ce mois · Budget prévu · Reste,
+  lignes épuisées en rouge), dépenses de la semaine par jour avec total, prêts accordés (mouvements, reste dû par
+  personne), emprunts (mouvements, reste à rendre par prêteur), caisse (disponible, sorties de la semaine) et
+  projets en cours. `reportSections` produit les mêmes sections pour la page et pour le PDF (`documentPdf`,
+  plusieurs tableaux, mêmes règles d'impression que les relevés) ; sur téléphone, intitulés courts (`short`).
+- Envoi : Vercel Cron (`vercel.json`, `0 20 * * 0` = dimanche 20 h à Abidjan, UTC+0) appelle
+  `/api/cron/weekly-report` avec `Authorization: Bearer CRON_SECRET` (401 sinon). Pour chaque utilisateur dont
+  `user_settings.weekly_email` est vrai (défaut) : rapport de la semaine écoulée, rien d'enregistré ni d'envoyé si
+  la semaine n'a aucun mouvement, jamais deux envois pour la même semaine (`sent_at`). E-mail Resend
+  (`reportEmail`) : objet « Mawnytrack · Rapport du [date] au [date] », synthèse, lien « Ouvrir le rapport dans
+  Mawnytrack », PDF joint `Rapport-Mawnytrack-AAAA-MM-JJ.pdf` (date du dimanche).
+- Application : liste du plus récent au plus ancien, « Générer le rapport de cette semaine » (à tout moment),
+  page du rapport avec « Imprimer » qui ouvre l'aperçu (Partager, Imprimer, Télécharger le PDF, Fermer).
+- Réglages › Notifications : interrupteur « Recevoir le rapport hebdomadaire par e-mail » et « M'envoyer un
+  rapport d'essai maintenant » (rapport de la semaine en cours, envoyé même sans mouvement).
+- Variable `CRON_SECRET` obligatoire sur Vercel pour la tâche planifiée.
+
 ## Sécurité
 - Toute requête est filtrée par l'utilisateur connecté côté serveur (`user_id`), y compris les suppressions.
   Les identifiants viennent de la session (`requireUserId` / `actionUserId`), jamais du client.
@@ -182,10 +204,11 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   du flux « Mot de passe oublié ? » à l'adresse du compte (`sendPasswordLink`) : le mot de passe ne se modifie que
   par ce lien. « Se déconnecter » et « Se déconnecter de tous les appareils » (`revokeSessions`).
 - Apparence : thème Automatique / Clair / Sombre (voir Design).
+- Notifications : rapport hebdomadaire par e-mail (voir Rapports).
 - Données : « Exporter mes données » (`/reglages/export`, JSON unique de toutes les tables de l'utilisateur, sans
   mot de passe ni jeton) ; « Tout réinitialiser » = remise à zéro comme pour une première utilisation : suppression
   dans une seule transaction des transactions (donc prêts, emprunts et remboursements), lignes, budgets figés,
-  personnes, projets, sorties de caisse et réglages ; seuls l'e-mail et le mot de passe restent ; autres appareils déconnectés ; retour à Dépenses.
+  personnes, projets, sorties de caisse, rapports hebdomadaires et réglages ; seuls l'e-mail et le mot de passe restent ; autres appareils déconnectés ; retour à Dépenses.
 - Compte : « Supprimer mon compte » efface l'utilisateur et, par cascade, toutes ses données et sessions.
 - Réinitialisation et suppression : double confirmation dans la page (mot « RÉINITIALISER » + mot de passe),
   revérifiée côté serveur (`verifyPassword`), limitée à l'utilisateur de la session.
