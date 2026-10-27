@@ -1,11 +1,7 @@
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { Brand } from "@/components/Brand";
-import { auth } from "@/lib/auth";
 
-export default async function AuthLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (session) redirect("/depenses");
+/** Pages d'authentification : bloc centré dans toute la fenêtre, sans barre latérale. */
+export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <main className="auth">
       <div className="auth-brand">

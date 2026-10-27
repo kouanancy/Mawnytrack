@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
 import { addLine, deleteLine, setPlanned } from "@/app/(app)/actions";
 import { IcoTrash } from "@/components/Icons";
@@ -31,7 +32,9 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
     // Un budget prévu ne peut pas être baissé sous le montant déjà dépensé du mois (0 = sans plafond)
     if (v && v < l.spent) {
       input.value = l.planned ? fmt(l.planned) : "";
-      return toast(`Le budget de « ${l.label} » ne peut pas être inférieur aux ${fmt(l.spent)} FCFA déjà dépensés.`);
+      return toast(
+        `Le budget de « ${l.label} » ne peut pas être inférieur aux ${fmt(l.spent)} FCFA déjà ${l.direction === "lent" ? "accordés" : "dépensés"}.`,
+      );
     }
     startTransition(async () => {
       addOp({ type: "plan", id: l.id, planned: v });
@@ -109,15 +112,22 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
       <div className={`bline ${st.state}`} key={l.id}>
         <div className="bl-top">
           <b>{l.label}</b>
-          <button
-            type="button"
-            className="del"
-            aria-label={`Retirer la ligne ${l.label}`}
-            disabled={pending}
-            onClick={() => setConfirm(l.id)}
-          >
-            <IcoTrash />
-          </button>
+          {l.personId ? (
+            // Ligne d'une personne : gérée depuis le volet Prêts (pas de retrait ici)
+            <Link className="bl-link" href={`/prets/${l.personId}`}>
+              Fiche ›
+            </Link>
+          ) : (
+            <button
+              type="button"
+              className="del"
+              aria-label={`Retirer la ligne ${l.label}`}
+              disabled={pending}
+              onClick={() => setConfirm(l.id)}
+            >
+              <IcoTrash />
+            </button>
+          )}
         </div>
         <div className="bl-grid">
           <div className="cell">
@@ -146,7 +156,13 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
             <i className={st.state} style={{ width: `${st.pct}%` }} />
           </div>
         )}
-        <div className="bl-msg num">{msg}</div>
+        {(st.state !== "free" || l.direction !== "lent") && <div className="bl-msg num">{msg}</div>}
+        {l.direction === "lent" && (
+          // Accordé cumulé sur toute la durée : prêts − remboursements
+          <div className="bl-msg num">
+            Dépenses liées : {fmt(l.expense)} · Remboursements : {fmt(l.refund)}
+          </div>
+        )}
       </div>
     );
   };

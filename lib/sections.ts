@@ -4,7 +4,7 @@ export const SECTIONS: Section[] = [
   { href: "/depenses", name: "Dépenses", ready: true, month: true },
   { href: "/revenus", name: "Revenus", ready: true, month: true },
   { href: "/budget", name: "Budget", ready: true, month: true },
-  { href: "/prets", name: "Prêts", ready: false, month: true },
+  { href: "/prets", name: "Prêts", ready: true, month: true },
   { href: "/caisse", name: "Caisse", ready: false, month: false },
   { href: "/investissements", name: "Investissements", ready: false, month: false },
 ];

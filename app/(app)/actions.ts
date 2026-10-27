@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { monthBounds } from "@/lib/data";
@@ -60,8 +60,10 @@ export async function addExpense(input: { month: string; amount: number; label: 
         where bl.id = ${lineId} and bl.user_id = ${userId}
       ), sp as (
         select coalesce(sum(case kind when 'expense' then amount when 'refund' then -amount else 0 end), 0) as spent
-        from transactions
-        where user_id = ${userId} and line_id = ${lineId} and occurred_at >= ${lo} and occurred_at < ${hi}
+        from transactions, ln
+        -- Ligne 'lent' : l'accordé (prêts − remboursements) se cumule sur toute la durée
+        where user_id = ${userId} and line_id = ${lineId}
+          and (ln.direction = 'lent' or (occurred_at >= ${lo} and occurred_at < ${hi}))
       ), du as (
         select coalesce(sum(case t.kind when 'borrow' then t.amount when 'expense' then -t.amount else 0 end), 0) as due
         from transactions t, ln
@@ -141,7 +143,10 @@ export async function addLine(input: { label: string; planned: number }): Promis
 export async function deleteLine(id: string): Promise<ActionResult> {
   const userId = await actionUserId();
   if (typeof id !== "string" || !UUID_RE.test(id)) return fail("Ligne introuvable.");
-  await db.delete(schema.budgetLines).where(and(eq(schema.budgetLines.id, id), eq(schema.budgetLines.userId, userId)));
+  // Les lignes de personnes (volet Prêts) ne se retirent pas depuis le Budget.
+  await db
+    .delete(schema.budgetLines)
+    .where(and(eq(schema.budgetLines.id, id), eq(schema.budgetLines.userId, userId), isNull(schema.budgetLines.personId)));
   return done();
 }
 
@@ -167,17 +172,27 @@ export async function setPlanned(input: { lineId: string; month: string; planned
       lock,
       db.execute(sql`
         with ln as (select id, label from budget_lines where id = ${lineId} and user_id = ${userId}),
-        sp as (
+        al as (
+          -- Ligne 'lent' : l'accordé se cumule sur toute la durée (0 pour les autres lignes)
+          select coalesce(sum(case t.kind when 'expense' then t.amount when 'refund' then -t.amount else 0 end), 0) as spent,
+            bool_or(true) as lent
+          from transactions t
+          join budget_lines bl on bl.id = t.line_id and bl.user_id = t.user_id
+          join people p on p.id = bl.person_id and p.user_id = bl.user_id and p.direction = 'lent'
+          where t.user_id = ${userId} and t.line_id = ${lineId}
+        ), sp as (
           select coalesce(${net}, 0) as spent from transactions
           where user_id = ${userId} and line_id = ${lineId} and occurred_at >= ${lo} and occurred_at < ${hi}
         ), up as (
           insert into monthly_budgets (user_id, line_id, month, planned)
-          select ${userId}, ln.id, (${start})::date, ${planned}::bigint from ln, sp
-          where ${planned}::bigint = 0 or ${planned}::bigint >= sp.spent
+          select ${userId}, ln.id, (${start})::date, ${planned}::bigint from ln, sp, al
+          where ${planned}::bigint = 0 or ${planned}::bigint >= greatest(sp.spent, al.spent)
           on conflict (line_id, month) do update set planned = excluded.planned
           returning id
         )
-        select ln.label, sp.spent, (select count(*) from up) as updated from ln, sp`),
+        select ln.label, greatest(sp.spent, al.spent) as spent, coalesce(al.lent, false) as lent,
+          (select count(*) from up) as updated
+        from ln, sp, al`),
     ]);
   } else {
     const { lo } = monthBounds(currentMonth());
@@ -185,7 +200,15 @@ export async function setPlanned(input: { lineId: string; month: string; planned
       lock,
       db.execute(sql`
         with ln as (select id, label from budget_lines where id = ${lineId} and user_id = ${userId}),
-        sp as (
+        al as (
+          -- Ligne 'lent' : l'accordé se cumule sur toute la durée (0 pour les autres lignes)
+          select coalesce(sum(case t.kind when 'expense' then t.amount when 'refund' then -t.amount else 0 end), 0) as spent,
+            bool_or(true) as lent
+          from transactions t
+          join budget_lines bl on bl.id = t.line_id and bl.user_id = t.user_id
+          join people p on p.id = bl.person_id and p.user_id = bl.user_id and p.direction = 'lent'
+          where t.user_id = ${userId} and t.line_id = ${lineId}
+        ), sp as (
           select coalesce(max(x.spent), 0) as spent from (
             select date_trunc('month', occurred_at at time zone ${APP_TZ})::date as m, ${net} as spent
             from transactions
@@ -196,15 +219,19 @@ export async function setPlanned(input: { lineId: string; month: string; planned
         ), up as (
           update budget_lines set planned = ${planned}::bigint
           where id = ${lineId} and user_id = ${userId}
-            and (${planned}::bigint = 0 or ${planned}::bigint >= (select spent from sp))
+            and (${planned}::bigint = 0 or ${planned}::bigint >= (select greatest(sp.spent, al.spent) from sp, al))
           returning id
         )
-        select ln.label, sp.spent, (select count(*) from up) as updated from ln, sp`),
+        select ln.label, greatest(sp.spent, al.spent) as spent, coalesce(al.lent, false) as lent,
+          (select count(*) from up) as updated
+        from ln, sp, al`),
     ]);
   }
 
   const r = rowsOf(res)[0];
   if (!r) return fail("Ligne introuvable.");
   if (Number(r.updated) > 0) return done();
-  return fail(`Le budget de « ${r.label} » ne peut pas être inférieur aux ${fmt(Number(r.spent))} FCFA déjà dépensés.`);
+  return fail(
+    `Le budget de « ${r.label} » ne peut pas être inférieur aux ${fmt(Number(r.spent))} FCFA déjà ${r.lent ? "accordés" : "dépensés"}.`,
+  );
 }

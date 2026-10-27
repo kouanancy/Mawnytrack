@@ -41,6 +41,10 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - Better Auth, e-mail + mot de passe uniquement (`lib/auth.ts`). Variable `BETTER_AUTH_SECRET`.
   `BETTER_AUTH_URL` est facultative (à définir pour un domaine personnalisé ; sinon hôtes `*.vercel.app`).
   Cache de session dans un cookie signé d'une minute : une déconnexion à distance prend effet en moins d'une minute.
+- Pages d'authentification (`app/(auth)`) : bloc centré horizontalement et verticalement, sans barre latérale ni
+  marge réservée ; champs en `--surface-2` / `--line` (y compris remplissage automatique du navigateur).
+  Connexion, inscription et mot de passe oublié renvoient vers Dépenses si une session valide existe
+  (`redirectIfSignedIn`, vérifiée en base) ; la page de nouveau mot de passe reste accessible connecté.
 - Mot de passe oublié : flux Better Auth (`requestPasswordReset` → `/api/auth/reset-password/:token` →
   `/nouveau-mot-de-passe?token=…`), lien valable 1 heure, à usage unique, sessions fermées après usage. Message
   identique que l'adresse existe ou non. E-mail envoyé en tâche de fond via Resend (`lib/email.ts`, API HTTP,
@@ -70,7 +74,8 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   - `refund` : remboursement reçu d'une personne `lent` ;
   - `borrow` : argent emprunté reçu d'une personne `borrowed`.
 - Reste disponible du mois = revenus + emprunts reçus − dépenses nettes (`expense` − `refund`).
-- Dettes en cours = somme, par personne `borrowed`, de max(0, emprunts − remboursements) (calculée, affichée à l'étape 2).
+- Dettes en cours = somme, par personne `borrowed`, de max(0, emprunts − remboursements), affichée sur la carte
+  « Reste disponible » tant qu'une somme reste à rendre (lien vers Prêts › Argent emprunté).
 - Budget d'un mois = `monthly_budgets.planned` s'il existe, sinon `budget_lines.planned`. À la première consultation
   d'un mois terminé, les valeurs sont figées dans `monthly_budgets` (`freezeMonth` dans `lib/data.ts`).
   Modifier le budget d'un mois terminé change sa valeur figée ; pour le mois en cours ou à venir, la valeur par défaut.
@@ -87,6 +92,34 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - Un budget prévu ne peut pas être baissé sous le montant déjà dépensé du mois (`setPlanned`, même verrou).
 - Un remboursement d'emprunt ne peut pas dépasser le reste à rendre.
 
+## Prêts (`/prets`, `lib/loans.ts`, `app/(app)/prets/actions.ts`)
+- Principe : tout passe par `transactions`, aucune donnée en double. Supprimer une transaction (journaux Dépenses
+  et Revenus) retire automatiquement le prêt, l'emprunt ou le remboursement correspondant.
+- Une personne n'existe qu'une fois par sens (index unique `004_loans.sql`). Chaque personne a une ligne de budget
+  à son nom (`budget_lines.person_id`), créée avec elle ; ces lignes ne se retirent pas depuis le Budget.
+- Argent prêté (`lent`) :
+  - « Ajouter une personne » : nom seul ; ligne créée dans le groupe « Prêts accordés » (Dépenses et Budget) ;
+  - une dépense sur sa ligne = un nouveau prêt (libellé et montant saisis côté Dépenses) ;
+  - « Enregistrer un remboursement » (montant, date) dans la fiche = `refund` sur sa ligne, limité au reste dû
+    (personne verrouillée `FOR UPDATE`) ;
+  - « Accordé » de la ligne = toutes ses dépenses − tous ses remboursements, sur toute la durée (jamais négatif),
+    avec « Dépenses liées : X · Remboursements : Y » ; le budget prévu ne peut jamais être dépassé par l'accordé
+    (`addExpense` et `setPlanned` comptent l'accordé total pour ces lignes).
+- Argent emprunté (`borrowed`) :
+  - « Nouvel emprunt » (prêteur, montant, date) ou « Enregistrer un nouvel emprunt » (montant, libellé) dans la
+    fiche = `borrow` ; la personne et sa ligne « Remboursements d'emprunts » sont créées au besoin ;
+  - l'emprunt s'ajoute aux revenus du mois et au reste disponible (« dont X empruntés »), jamais à l'épargne
+    supplémentaire (revenus `income` seuls) ni à la caisse ;
+  - une dépense sur sa ligne = un remboursement : bloquée si rien n'est dû, si le montant dépasse le reste à
+    rendre ou le budget du mois de la ligne (interface et serveur) ; « Remboursé ce mois » non modifiable ;
+  - pas de formulaire de remboursement dans la fiche : les remboursements se saisissent côté Dépenses.
+- Écrans : liste (tuiles « À recevoir » / « À rembourser », bascule `?sens=emprunte`, une ligne par personne,
+  statut « En cours » ou « Soldé », sans échéance) ; fiche `/prets/[id]` (retour, icône d'impression, totaux,
+  formulaire selon le sens, historique du plus récent au plus ancien) ; relevé `/prets/[id]/releve?m=YYYY-MM`
+  (12 derniers mois, reste dû au début du mois, mouvements chronologiques, totaux, reste dû au dernier jour ;
+  à l'impression, seule la feuille est imprimée, sur fond blanc).
+- Agrégats en SQL, une requête pour toutes les personnes ; mises à jour optimistes dans la liste et la fiche.
+
 ## Sécurité
 - Toute requête est filtrée par l'utilisateur connecté côté serveur (`user_id`), y compris les suppressions.
   Les identifiants viennent de la session (`requireUserId` / `actionUserId`), jamais du client.
@@ -94,13 +127,14 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 
 ## Réglages (`/reglages`, `components/SettingsView.tsx`, `app/settings-actions.ts`)
 - Profil : nom (`updateUser`) et adresse e-mail (`changeEmail`, modifiée immédiatement, adresse déjà prise refusée).
-- Sécurité : changer le mot de passe (actuel, nouveau, confirmation ; les autres appareils sont déconnectés),
-  « Se déconnecter », « Se déconnecter de tous les appareils » (`revokeSessions`, retour à la connexion).
+- Sécurité : aucun champ de mot de passe. « Recevoir un lien de changement de mot de passe » envoie l'e-mail
+  du flux « Mot de passe oublié ? » à l'adresse du compte (`sendPasswordLink`) : le mot de passe ne se modifie que
+  par ce lien. « Se déconnecter » et « Se déconnecter de tous les appareils » (`revokeSessions`).
 - Apparence : thème Automatique / Clair / Sombre (voir Design).
 - Données : « Exporter mes données » (`/reglages/export`, JSON unique de toutes les tables de l'utilisateur, sans
   mot de passe ni jeton) ; « Tout réinitialiser » = remise à zéro comme pour une première utilisation : suppression
-  dans une seule transaction des transactions, lignes, budgets figés, personnes, projets, sorties de caisse et
-  réglages ; seuls l'e-mail et le mot de passe restent ; autres appareils déconnectés ; retour à Dépenses.
+  dans une seule transaction des transactions (donc prêts, emprunts et remboursements), lignes, budgets figés,
+  personnes, projets, sorties de caisse et réglages ; seuls l'e-mail et le mot de passe restent ; autres appareils déconnectés ; retour à Dépenses.
 - Compte : « Supprimer mon compte » efface l'utilisateur et, par cascade, toutes ses données et sessions.
 - Réinitialisation et suppression : double confirmation dans la page (mot « RÉINITIALISER » + mot de passe),
   revérifiée côté serveur (`verifyPassword`), limitée à l'utilisateur de la session.

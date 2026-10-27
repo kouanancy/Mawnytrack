@@ -16,7 +16,7 @@ export type Line = {
   direction: Direction | null;
   /** Budget prévu du mois (0 = pas de plafond) */
   planned: number;
-  /** Dépensé net du mois : dépenses − remboursements reçus */
+  /** Dépensé net du mois (dépenses − remboursements reçus) ; ligne 'lent' : accordé sur toute la durée */
   spent: number;
   expense: number;
   refund: number;
@@ -80,6 +80,17 @@ function linesQuery(userId: string, month: string) {
       from transactions
       where user_id = ${userId} and line_id is not null and occurred_at >= ${lo} and occurred_at < ${hi}
       group by line_id
+    ), a as (
+      -- Lignes de personnes 'lent' : accordé calculé sur toute la durée (prêts − remboursements)
+      select t.line_id,
+        sum(case t.kind when 'expense' then t.amount when 'refund' then -t.amount else 0 end) as spent,
+        coalesce(sum(t.amount) filter (where t.kind = 'expense'), 0) as expense,
+        coalesce(sum(t.amount) filter (where t.kind = 'refund'), 0) as refund
+      from transactions t
+      join budget_lines bl on bl.id = t.line_id and bl.user_id = t.user_id
+      join people p on p.id = bl.person_id and p.user_id = bl.user_id and p.direction = 'lent'
+      where t.user_id = ${userId}
+      group by t.line_id
     ), d as (
       select t.person_id,
         sum(case
@@ -94,12 +105,15 @@ function linesQuery(userId: string, month: string) {
     )
     select bl.id, bl.label, bl.person_id, p.direction,
       coalesce(mb.planned, bl.planned) as planned,
-      coalesce(s.spent, 0) as spent, coalesce(s.expense, 0) as expense, coalesce(s.refund, 0) as refund,
+      case when p.direction = 'lent' then greatest(coalesce(a.spent, 0), 0) else greatest(coalesce(s.spent, 0), 0) end as spent,
+      case when p.direction = 'lent' then coalesce(a.expense, 0) else coalesce(s.expense, 0) end as expense,
+      case when p.direction = 'lent' then coalesce(a.refund, 0) else coalesce(s.refund, 0) end as refund,
       greatest(coalesce(d.due, 0), 0) as due
     from budget_lines bl
     left join people p on p.id = bl.person_id and p.user_id = bl.user_id
     left join monthly_budgets mb on mb.line_id = bl.id and mb.month = (${start})::date
     left join s on s.line_id = bl.id
+    left join a on a.line_id = bl.id
     left join d on d.person_id = bl.person_id
     where bl.user_id = ${userId}
     order by bl.position, bl.created_at`);
