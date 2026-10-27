@@ -40,7 +40,7 @@ function apply(data: MonthData, e: Entry, sign: 1 | -1): MonthData {
     l.id === e.lineId
       ? {
           ...l,
-          spent: l.spent + sign * lineDelta(e),
+          spent: Math.max(0, l.spent + sign * lineDelta(e)),
           expense: l.expense + (e.kind === "expense" ? sign * e.amount : 0),
           refund: l.refund + (e.kind === "refund" ? sign * e.amount : 0),
           due: Math.max(0, l.due + sign * dueDelta(e, l.direction)),

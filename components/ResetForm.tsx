@@ -33,7 +33,12 @@ export function ResetForm({ token }: { token: string | null }) {
       return;
     }
     setDone(true);
-    setTimeout(() => router.replace("/connexion"), 2500);
+    // Toutes les sessions sont fermées par le changement : on efface aussi celle de ce navigateur.
+    await authClient.signOut().catch(() => {});
+    setTimeout(() => {
+      router.replace("/connexion?info=mot-de-passe");
+      router.refresh();
+    }, 2000);
   }
 
   return (

@@ -17,12 +17,6 @@ const fail = (error: string): SettingsResult => ({ ok: false, error });
 const CONFIRM_WORD = "RÉINITIALISER";
 const YEAR = 60 * 60 * 24 * 365;
 
-/** Code d'erreur Better Auth (APIError) éventuel. */
-function codeOf(err: unknown): string | undefined {
-  const e = err as { body?: { code?: string }; code?: string };
-  return e?.body?.code ?? e?.code;
-}
-
 async function writeThemeCookie(theme: Theme) {
   const jar = await cookies();
   if (theme === "auto") jar.delete(THEME_COOKIE);
@@ -110,23 +104,20 @@ export async function updateEmail(email: string): Promise<SettingsResult> {
 
 /* ---------- Sécurité ---------- */
 
-export async function changePassword(input: { current: string; next: string; confirm: string }): Promise<SettingsResult> {
+/**
+ * Envoie à l'adresse du compte le lien de changement de mot de passe (même flux que « Mot de passe oublié ? »).
+ * Le mot de passe ne se modifie que par ce lien.
+ */
+export async function sendPasswordLink(): Promise<SettingsResult> {
   await actionUserId();
-  if (!input.current) return fail("Saisissez le mot de passe actuel.");
-  if (typeof input.next !== "string" || input.next.length < 8) return fail("Le nouveau mot de passe doit contenir au moins 8 caractères.");
-  if (input.next !== input.confirm) return fail("Les deux nouveaux mots de passe ne correspondent pas.");
+  const user = (await auth.api.getSession({ headers: await headers() }))?.user;
+  if (!user) return fail("Session expirée. Reconnectez-vous.");
   try {
-    await auth.api.changePassword({
-      body: { currentPassword: input.current, newPassword: input.next, revokeOtherSessions: true },
-      headers: await headers(),
-    });
-  } catch (err) {
-    const code = codeOf(err);
-    if (code === "INVALID_PASSWORD") return fail("Mot de passe actuel incorrect.");
-    if (code === "PASSWORD_TOO_LONG") return fail("Le nouveau mot de passe est trop long.");
-    return fail("Modification impossible. Réessayez.");
+    await auth.api.requestPasswordReset({ body: { email: user.email, redirectTo: "/nouveau-mot-de-passe" }, headers: await headers() });
+  } catch {
+    return fail("Envoi impossible pour le moment. Réessayez dans un instant.");
   }
-  return ok("Mot de passe modifié. Les autres appareils ont été déconnectés.");
+  return ok(`Un e-mail vient d'être envoyé à ${user.email}. Le lien est valable 1 heure.`);
 }
 
 /** Ferme toutes les sessions, y compris celle-ci, puis renvoie vers la connexion. */

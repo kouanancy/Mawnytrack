@@ -91,7 +91,8 @@ export function Header({ current }: { current: string }) {
           </div>
           <Brand />
         </div>
-        {section.month && (
+        {/* Sélecteur de mois sur la page principale de la section (pas sur une fiche ni un relevé) */}
+        {section.month && pathname === section.href && (
           <div className="month">
             <Link href={withMonth(pathname, shiftMonth(month, -1))} aria-label="Mois précédent" scroll={false}>
               <IcoBack />

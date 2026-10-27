@@ -113,6 +113,14 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref, re
               <strong className="num">−{fmt(out)}</strong>
             </div>
           </div>
+          {view.debts > 0 && (
+            <Link className="hero-link" href="/prets?sens=emprunte">
+              <span>
+                Dettes en cours : <b className="num">{fmt(view.debts)} FCFA</b>
+              </span>
+              <span>Voir ›</span>
+            </Link>
+          )}
           {dry > 0 && (
             <Link className="hero-link" href={budgetHref}>
               <span>

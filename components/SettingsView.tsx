@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
-  changePassword,
   deleteAccount,
   resetAccount,
+  sendPasswordLink,
   setTheme,
   signOutEverywhere,
   updateEmail,
@@ -112,37 +112,16 @@ export function SettingsView({ name, email, theme, version }: Props) {
 
       <section className="card set" aria-labelledby="s-securite">
         <h2 id="s-securite">Sécurité</h2>
-        <form
-          onSubmit={form(
-            "password",
-            (f) =>
-              changePassword({
-                current: String(f.get("current") ?? ""),
-                next: String(f.get("next") ?? ""),
-                confirm: String(f.get("confirm") ?? ""),
-              }),
-            (r, el) => r.ok && el.reset(),
-          )}
-        >
-          <h3>Changer le mot de passe</h3>
-          <div className="field">
-            <label htmlFor="set-cur">Mot de passe actuel</label>
-            <PasswordInput id="set-cur" name="current" autoComplete="current-password" required />
-          </div>
-          <div className="field">
-            <label htmlFor="set-new">Nouveau mot de passe</label>
-            <PasswordInput id="set-new" name="next" autoComplete="new-password" required minLength={8} />
-            <p className="hint" style={{ marginTop: 2 }}>8 caractères minimum.</p>
-          </div>
-          <div className="field">
-            <label htmlFor="set-conf">Confirmation du nouveau mot de passe</label>
-            <PasswordInput id="set-conf" name="confirm" autoComplete="new-password" required minLength={8} />
-          </div>
-          <button className="btn sm" type="submit" disabled={pending}>
-            Changer le mot de passe
+        <div className="set-actions">
+          <h3>Mot de passe</h3>
+          <p className="hint">
+            Le mot de passe se modifie par un lien envoyé à l&apos;adresse du compte ({email}), valable 1 heure.
+          </p>
+          <button className="btn sm" type="button" disabled={pending} onClick={() => run("password", sendPasswordLink)}>
+            Recevoir un lien de changement de mot de passe
           </button>
           <Feedback res={results.password ?? null} />
-        </form>
+        </div>
         <div className="set-actions">
           <h3>Sessions</h3>
           <button className="btn ghost sm" type="button" onClick={signOut}>
