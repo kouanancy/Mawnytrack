@@ -468,3 +468,33 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:.7}
   .item{break-inside:avoid;page-break-inside:avoid}
   .amt{white-space:nowrap}
 }
+
+/* ---------- Aperçu avant impression ou partage (components/PdfPreview.tsx) ---------- */
+body.pv-open{overflow:hidden}
+.pv{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) 0 env(safe-area-inset-left,0px)}
+.pv-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+.pv-top b{font-family:var(--f-display);font-size:16px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-zoom{display:flex;align-items:center;gap:6px;flex:none;font-size:13px;color:var(--muted)}
+.pv-zoom .iconbtn{width:36px;height:36px;font-size:18px;font-weight:700}
+.pv-zoom span{min-width:46px;text-align:center}
+.pv-pages{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:16px;display:flex;flex-direction:column;align-items:center;gap:16px;touch-action:pan-x pan-y pinch-zoom}
+.pv-page{display:block;max-width:none;height:auto;background:#fff;box-shadow:0 2px 12px var(--shadow);border-radius:2px;flex:none}
+.pv-msg{margin:auto;text-align:center;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:12px}
+.pv-bar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface)}
+.pv-bar .btn{padding:0 8px;font-size:14px}
+.pv-print{display:none}
+@media (max-width:560px){.pv-bar{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@page pv{size:A4 portrait;margin:0}
+@media print{
+  /* Seules les pages de l'aperçu sont imprimées, à pleine page (marges déjà incluses dans le PDF) */
+  body.pv-open > :not(.pv){display:none!important}
+  body.pv-open .pv{position:static;display:block;background:#fff;padding:0}
+  body.pv-open .pv > :not(.pv-print){display:none!important}
+  body.pv-open .pv-print{display:block;page:pv}
+  body.pv-open .pv-print img{display:block;width:100%;max-width:210mm;height:auto;break-after:page;page-break-after:always;margin:0 auto}
+  body.pv-open .pv-print img:last-child{break-after:auto;page-break-after:auto}
+  body.pv-open{padding:0!important;overflow:visible}
+}
+.sheet .st-month td{background:var(--surface-2);color:var(--accent);font-weight:700;padding-top:10px}
+.sheet .st-sub td{color:var(--muted);font-weight:700;border-bottom:1.5px solid var(--line)}

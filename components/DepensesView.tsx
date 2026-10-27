@@ -7,7 +7,8 @@ import { CategoryFilter } from "@/components/CategoryFilter";
 import { IcoPrint, IcoWarn } from "@/components/Icons";
 import { Journal } from "@/components/Journal";
 import { useToast } from "@/components/Toast";
-import { printOrShare } from "@/lib/print";
+import { PdfPreview } from "@/components/PdfPreview";
+import { sortiesFilename } from "@/lib/statement";
 import { Brand } from "@/components/Brand";
 import type { Entry, MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount, plural } from "@/lib/format";
@@ -25,6 +26,7 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref, re
   const [lineId, setLineId] = useState<string | null>(null);
   const [alert, setAlert] = useState<{ label: string; planned: number } | null>(null);
   const [filter, setFilter] = useState<string | null>(null);
+  const [preview, setPreview] = useState(false);
   const amountRef = useRef<HTMLInputElement>(null);
 
 
@@ -240,16 +242,9 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref, re
           <button
             type="button"
             className="iconbtn"
-            aria-label={`Imprimer ${cur}`}
-            title="Imprimer l'affichage"
-            onClick={() =>
-            printOrShare({
-              pdfUrl: `/depenses/pdf?m=${month}${activeFilter ? `&ligne=${activeFilter}` : ""}`,
-              filename: `sorties-${month}.pdf`,
-              title: `Sorties de ${monthName} · ${cur}`,
-              notify: toast,
-            })
-          }
+            aria-label={`Imprimer ou partager : ${cur}`}
+            title="Imprimer ou partager l'affichage"
+            onClick={() => setPreview(true)}
           >
             <IcoPrint />
           </button>
@@ -266,6 +261,14 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref, re
           <b className="num">{fmt(filtered)} FCFA</b>
         </div>
       </div>
+      {preview && (
+        <PdfPreview
+          pdfUrl={`/depenses/pdf?m=${month}${activeFilter ? `&ligne=${activeFilter}` : ""}`}
+          filename={sortiesFilename(monthName, filterLine?.label)}
+          title={`Sorties de ${monthName} · ${cur}`}
+          onClose={() => setPreview(false)}
+        />
+      )}
     </div>
   );
 }

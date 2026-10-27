@@ -2,34 +2,24 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Brand } from "@/components/Brand";
 import { IcoBack } from "@/components/Icons";
-import { useToast } from "@/components/Toast";
-import { printOrShare, sharePdf } from "@/lib/print";
+import { PdfPreview } from "@/components/PdfPreview";
 import { fmt } from "@/lib/format";
-import type { Movement, Person } from "@/lib/loans";
+import type { Person, StatementRow } from "@/lib/loans";
 import { monthLabel } from "@/lib/month";
+import { buildStatement } from "@/lib/statement";
 
-type Props = { person: Person; month: string; months: string[]; before: number; rows: Movement[] };
+type Props = { person: Person; period: string; months: string[]; before: number; rows: StatementRow[]; today: string };
 
-const pad = (n: number) => String(n).padStart(2, "0");
+const n = (v: number | null) => (v == null ? "" : fmt(v));
 
-/** Relevé mensuel imprimable d'une personne (prêts ou emprunts). */
-export function StatementView({ person: p, month, months, before, rows }: Props) {
+/** Relevé d'une personne (un mois ou tout le relevé), avec aperçu avant impression ou partage. */
+export function StatementView({ person: p, period, months, before, rows, today }: Props) {
   const router = useRouter();
-  const L = p.direction === "lent";
-  const [y, m] = month.split("-").map(Number);
-  const tl = rows.filter((r) => r.type === "loan").reduce((a, r) => a + r.amount, 0);
-  const tp = rows.filter((r) => r.type === "pay").reduce((a, r) => a + r.amount, 0);
-  const end = Math.max(0, before + tl - tp);
-  const toast = useToast();
-  const pdf = {
-    pdfUrl: `/prets/${p.id}/releve/pdf?m=${month}`,
-    filename: `releve-${month}.pdf`,
-    title: `Relevé ${L ? "de prêts" : "d'emprunts"} · ${p.name}`,
-    notify: toast,
-  };
-  const lastDay = new Date(Date.UTC(y, m, 0)).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  const [preview, setPreview] = useState(false);
+  const st = buildStatement({ name: p.name, direction: p.direction, period, before, rows, today });
 
   return (
     <div className="statement">
@@ -40,8 +30,13 @@ export function StatementView({ person: p, month, months, before, rows }: Props)
       </div>
       <div className="row noprint" style={{ alignItems: "flex-end" }}>
         <div className="field" style={{ flex: "2 1 180px" }}>
-          <label htmlFor="st-m">Mois du relevé</label>
-          <select id="st-m" value={month} onChange={(e) => router.replace(`/prets/${p.id}/releve?m=${e.target.value}`, { scroll: false })}>
+          <label htmlFor="st-m">Période du relevé</label>
+          <select
+            id="st-m"
+            value={period}
+            onChange={(e) => router.replace(`/prets/${p.id}/releve?m=${e.target.value}`, { scroll: false })}
+          >
+            <option value="tout">Tout le relevé</option>
             {months.map((mo) => (
               <option key={mo} value={mo}>
                 {monthLabel(mo)}
@@ -49,22 +44,19 @@ export function StatementView({ person: p, month, months, before, rows }: Props)
             ))}
           </select>
         </div>
-        <button className="btn" type="button" style={{ flex: "1 1 120px" }} onClick={() => printOrShare(pdf)}>
-          Imprimer
-        </button>
-        <button className="btn ghost" type="button" style={{ flex: "1 1 100px" }} onClick={() => sharePdf(pdf)}>
-          PDF
+        <button className="btn" type="button" style={{ flex: "1 1 140px" }} onClick={() => setPreview(true)}>
+          Imprimer ou partager
         </button>
       </div>
       <article className="sheet">
         <div className="sh-head">
           <div>
             <Brand size={24} style={{ fontSize: 18 }} />
-            <span>Relevé {L ? "de prêts" : "d'emprunts"}</span>
+            <span>{st.title}</span>
           </div>
           <div className="sh-who">
             <b>{p.name}</b>
-            <span style={{ textTransform: "capitalize" }}>{monthLabel(month)}</span>
+            <span>{st.periodLabel}</span>
           </div>
         </div>
         <div className="sh-scroll">
@@ -73,53 +65,97 @@ export function StatementView({ person: p, month, months, before, rows }: Props)
               <tr>
                 <th>Date</th>
                 <th>Libellé</th>
-                <th className="r">{L ? "Prêt" : "Emprunt"}</th>
+                <th className="r">{st.loanLabel}</th>
                 <th className="r">Remboursement</th>
+                <th className="r">Reste dû</th>
               </tr>
             </thead>
             <tbody>
-              <tr className="carry">
-                <td>01/{pad(m)}</td>
-                <td>Reste dû au début du mois</td>
-                <td className="r num" colSpan={2}>
-                  {fmt(before)}
-                </td>
-              </tr>
-              {rows.length ? (
-                rows.map((r) => (
-                  <tr key={r.id}>
-                    <td className="num">
-                      {r.day.slice(8, 10)}/{r.day.slice(5, 7)}
-                    </td>
-                    <td>{r.label || (r.type === "loan" ? (L ? "Prêt" : "Emprunt") : "Remboursement")}</td>
-                    <td className="r num">{r.type === "loan" ? fmt(r.amount) : ""}</td>
-                    <td className="r num">{r.type === "pay" ? fmt(r.amount) : ""}</td>
-                  </tr>
-                ))
-              ) : (
+              {st.empty && period === "tout" ? (
                 <tr>
-                  <td colSpan={4} className="emptyrow">
+                  <td colSpan={5} className="emptyrow">
+                    Aucun mouvement.
+                  </td>
+                </tr>
+              ) : (
+                st.rows.map((r, i) => {
+                  switch (r.kind) {
+                    case "carry":
+                      return (
+                        <tr className="carry" key={i}>
+                          <td>{r.date}</td>
+                          <td colSpan={3}>{r.label}</td>
+                          <td className="r num">{fmt(r.balance)}</td>
+                        </tr>
+                      );
+                    case "month":
+                      return (
+                        <tr className="st-month" key={i}>
+                          <td colSpan={5}>{r.label}</td>
+                        </tr>
+                      );
+                    case "move":
+                      return (
+                        <tr key={i}>
+                          <td className="num">{r.date}</td>
+                          <td>{r.label}</td>
+                          <td className="r num">{n(r.loan)}</td>
+                          <td className="r num">{n(r.pay)}</td>
+                          <td className="r num">{fmt(r.balance)}</td>
+                        </tr>
+                      );
+                    case "subtotal":
+                      return (
+                        <tr className="st-sub" key={i}>
+                          <td colSpan={2}>{r.label}</td>
+                          <td className="r num">{fmt(r.loan)}</td>
+                          <td className="r num">{fmt(r.pay)}</td>
+                          <td className="r num">{fmt(r.balance)}</td>
+                        </tr>
+                      );
+                    default:
+                      return null;
+                  }
+                })
+              )}
+              {!(st.empty && period === "tout") && st.empty && (
+                <tr>
+                  <td colSpan={5} className="emptyrow">
                     Aucun mouvement sur ce mois.
                   </td>
                 </tr>
               )}
             </tbody>
             <tfoot>
-              <tr>
-                <th colSpan={2}>Total du mois</th>
-                <th className="r num">{fmt(tl)}</th>
-                <th className="r num">{fmt(tp)}</th>
-              </tr>
-              <tr className="end">
-                <th colSpan={2}>Reste dû au {lastDay}</th>
-                <th className="r num" colSpan={2}>
-                  {fmt(end)} FCFA
-                </th>
-              </tr>
+              {st.rows.map((r, i) =>
+                r.kind === "total" ? (
+                  <tr key={i}>
+                    <th colSpan={2}>{r.label}</th>
+                    <th className="r num">{fmt(r.loan)}</th>
+                    <th className="r num">{fmt(r.pay)}</th>
+                    <th />
+                  </tr>
+                ) : r.kind === "end" ? (
+                  <tr className="end" key={i}>
+                    <th colSpan={2}>{r.label}</th>
+                    <th className="r num" colSpan={3}>
+                      {fmt(r.balance)} FCFA
+                    </th>
+                  </tr>
+                ) : null,
+              )}
             </tfoot>
           </table>
         </div>
       </article>
+      {preview && (
+        <PdfPreview
+          pdfUrl={`/prets/${p.id}/releve/pdf?m=${period}`}
+          filename={st.filename}
+          title={`${st.title} · ${p.name}`}
+          onClose={() => setPreview(false)}
+        />
+      )}
     </div>
   );
 }

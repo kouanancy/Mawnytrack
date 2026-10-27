@@ -36,11 +36,23 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - Impression : `@page` A4 portrait, marges de 15 mm ; tableaux en largeur 100 %, montants et dates sans retour
   à la ligne, libellés longs à la ligne, lignes jamais coupées, en-tête de tableau répété. À l'écran, le relevé
   défile dans son propre cadre sur téléphone.
-- Boutons d'impression : `printOrShare` (`lib/print.ts`) appelle `window.print()` directement dans le clic ;
-  dans l'application installée (PWA « standalone ») ou si l'impression manque, un PDF de même mise en page
-  (`lib/pdf.ts`, routes `/depenses/pdf` et `/prets/[id]/releve/pdf`) est proposé via `navigator.share`, sinon
-  téléchargé, avec « Préparation du document… » et un message en cas d'échec. Le relevé a aussi un bouton « PDF ».
+- Boutons d'impression (relevé des prêts, dépenses filtrées) : ouvrent d'abord l'aperçu plein écran
+  `components/PdfPreview.tsx`. Le PDF (`lib/pdf.ts`, routes `/depenses/pdf?m=&ligne=` et
+  `/prets/[id]/releve/pdf?m=YYYY-MM|tout`) est rendu page par page avec pdf.js (`pdfjs-dist`, version legacy,
+  chargé seulement à l'ouverture) : pages A4 défilables, zoom −/+ et pincement. Boutons en bas :
+  - « Partager » : `navigator.share` avec le PDF en pièce jointe (WhatsApp, e-mail, Fichiers…), appelé directement
+    dans le clic ; sans partage (ordinateur), téléchargement avec un message ;
+  - « Imprimer » : `window.print()` n'imprime que les pages de l'aperçu (page CSS nommée `pv`, marges déjà dans le
+    PDF) ; dans l'application installée (PWA « standalone ») ou sans impression, passe par le menu de partage ;
+  - « Télécharger le PDF » et « Fermer » (ou Échap).
+  « Préparation du document… » pendant le rendu, message et « Réessayer » en cas d'échec.
+  Noms de fichiers sans accents : `Releve-Awa-octobre-2026.pdf`, `Releve-Awa-tout.pdf`, `Sorties-octobre-2026-Repas.pdf`.
   Comme les e-mails, les PDF ne lisent pas les variables CSS : la palette claire y est écrite en ligne.
+- Relevé des prêts (`lib/statement.ts`, commun à la page et au PDF) : période « Tout le relevé » (en premier) ou
+  l'un des 12 derniers mois. Colonnes Date · Libellé · Prêt (ou Emprunt) · Remboursement · Reste dû (solde après
+  chaque mouvement, somme cumulée calculée en SQL). Mois : « Reste dû au début du mois », total du mois, reste dû
+  au dernier jour. Tout le relevé : titre et sous-total par mois, total général, « Reste dû au [aujourd'hui] »,
+  période « du [premier mouvement] au [aujourd'hui] ».
 - Champs mot de passe : toujours `components/PasswordInput.tsx` (bouton « œil » accessible, type="button").
 - Première utilisation (aucune ligne de budget) : Dépenses affiche l'écran de bienvenue expliquant comment créer
   la première ligne de budget et le premier revenu.
@@ -127,8 +139,7 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - Écrans : liste (tuiles « À recevoir » / « À rembourser », bascule `?sens=emprunte`, une ligne par personne,
   statut « En cours » ou « Soldé », sans échéance) ; fiche `/prets/[id]` (retour, icône d'impression, totaux,
   formulaire selon le sens, historique du plus récent au plus ancien) ; relevé `/prets/[id]/releve?m=YYYY-MM`
-  (12 derniers mois, reste dû au début du mois, mouvements chronologiques, totaux, reste dû au dernier jour ;
-  à l'impression, seule la feuille est imprimée, sur fond blanc).
+  (« Tout le relevé » ou l'un des 12 derniers mois, colonne « Reste dû » ; voir Impression).
 - Agrégats en SQL, une requête pour toutes les personnes ; mises à jour optimistes dans la liste et la fiche.
 
 ## Caisse (`/caisse`, `lib/caisse.ts`)

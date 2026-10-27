@@ -94,23 +94,36 @@ export async function getPerson(userId: string, personId: string) {
   return person ? { person: toPerson(person), history: history.rows.map(toMovement) } : null;
 }
 
-/** Relevé mensuel : reste dû au début du mois, puis mouvements du mois dans l'ordre chronologique. */
-export async function getStatement(userId: string, personId: string, month: string) {
-  const { lo, hi } = monthBounds(month);
+export type StatementRow = Movement & { /** Reste dû après ce mouvement */ balance: number };
+
+/**
+ * Relevé d'une personne. period = "YYYY-MM" (un mois) ou "tout" (du premier mouvement à aujourd'hui).
+ * Le reste dû après chaque mouvement est calculé en SQL (somme cumulée sur tout l'historique).
+ */
+export async function getStatement(userId: string, personId: string, period: string) {
+  const all = period === "tout";
+  const bounds = all ? null : monthBounds(period);
   const [people, before, rows] = (await db.batch([
     peopleQuery(userId, personId),
     db.execute(sql`
       select coalesce(sum(case when ${LOAN} then t.amount when ${PAY} then -t.amount else 0 end), 0) as before
       from transactions t join people p on p.id = t.person_id and p.user_id = t.user_id
-      where t.user_id = ${userId} and t.person_id = ${personId} and t.occurred_at < ${lo}`),
+      where t.user_id = ${userId} and t.person_id = ${personId} and ${bounds ? sql`t.occurred_at < ${bounds.lo}` : sql`false`}`),
     db.execute(sql`
-      select ${movementCols}
-      from transactions t join people p on p.id = t.person_id and p.user_id = t.user_id
-      where t.user_id = ${userId} and t.person_id = ${personId} and (${LOAN} or ${PAY})
-        and t.occurred_at >= ${lo} and t.occurred_at < ${hi}
-      order by t.occurred_at, t.created_at`),
+      select * from (
+        select ${movementCols}, t.occurred_at, t.created_at,
+          sum(case when ${LOAN} then t.amount else -t.amount end) over (order by t.occurred_at, t.created_at, t.id) as balance
+        from transactions t join people p on p.id = t.person_id and p.user_id = t.user_id
+        where t.user_id = ${userId} and t.person_id = ${personId} and (${LOAN} or ${PAY})
+      ) x
+      ${bounds ? sql`where x.occurred_at >= ${bounds.lo} and x.occurred_at < ${bounds.hi}` : sql``}
+      order by x.occurred_at, x.created_at, x.id`),
   ])) as unknown as Rows[];
   const person = people.rows[0];
   if (!person) return null;
-  return { person: toPerson(person), before: Math.max(0, n(before.rows[0]?.before)), rows: rows.rows.map(toMovement) };
+  return {
+    person: toPerson(person),
+    before: Math.max(0, n(before.rows[0]?.before)),
+    rows: rows.rows.map((r): StatementRow => ({ ...toMovement(r), balance: Math.max(0, n(r.balance)) })),
+  };
 }

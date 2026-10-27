@@ -5,6 +5,7 @@ import { fmt } from "@/lib/format";
 import { category } from "@/lib/ledger";
 import { currentMonth, isValidMonth, monthLabel } from "@/lib/month";
 import { pdfResponse, tablePdf } from "@/lib/pdf";
+import { sortiesFilename } from "@/lib/statement";
 
 /** Sorties du mois en PDF, éventuellement filtrées par catégorie (même contenu que l'impression). */
 export async function GET(req: Request) {
@@ -40,5 +41,5 @@ export async function GET(req: Request) {
     empty: "Aucune sortie.",
     footer: [{ cells: [`Total ${cur}`, null, null, `${fmt(total)} FCFA`], style: "total" }],
   });
-  return pdfResponse(bytes, `sorties-${month}.pdf`);
+  return pdfResponse(bytes, sortiesFilename(monthLabel(month), line?.label));
 }

@@ -7,7 +7,7 @@ import { LineCapStyle, PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPa
 // Un PDF ne lit pas les variables CSS : comme pour les e-mails, la palette claire est écrite ici.
 
 const hex = (h: string) => rgb(parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255);
-const C = { ink: hex("#0F2B25"), muted: hex("#4F635B"), line: hex("#D5E0DA"), accent: hex("#0B7A5C"), hero: hex("#0F3B32"), bar: hex("#7FE0B9"), out: hex("#F4A089") };
+const C = { ink: hex("#0F2B25"), muted: hex("#4F635B"), line: hex("#D5E0DA"), soft: hex("#F3F7F5"), accent: hex("#0B7A5C"), hero: hex("#0F3B32"), bar: hex("#7FE0B9"), out: hex("#F4A089") };
 
 const PAGE_W = 595.28, PAGE_H = 841.89;
 const M = (15 / 25.4) * 72; // 15 mm
@@ -15,7 +15,8 @@ const W = PAGE_W - 2 * M;
 
 export type Column = { label: string; width: number; align?: "left" | "right" };
 /** Cellule null : fusionnée avec la cellule précédente (colspan). */
-export type TableRow = { cells: (string | null)[]; style?: "normal" | "muted" | "bold" | "total" | "end" };
+/** group : titre de mois ; subtotal : sous-total ; total / end : bas du tableau. */
+export type TableRow = { cells: (string | null)[]; style?: "normal" | "muted" | "bold" | "group" | "subtotal" | "total" | "end" };
 
 export type TableDoc = {
   title: string;
@@ -135,22 +136,22 @@ export async function tablePdf(doc: TableDoc): Promise<Uint8Array> {
   };
 
   const drawRow = (row: TableRow) => {
-    const font = row.style === "bold" || row.style === "total" || row.style === "end" ? bold : row.style === "muted" ? italic : regular;
-    const color = row.style === "muted" ? C.muted : C.ink;
+    const strong = row.style === "bold" || row.style === "group" || row.style === "subtotal" || row.style === "total" || row.style === "end";
+    const font = strong ? bold : row.style === "muted" ? italic : regular;
+    const color = row.style === "muted" || row.style === "subtotal" ? C.muted : row.style === "group" ? C.accent : C.ink;
     const fsize = row.style === "end" ? 11 : size;
     // Cellules fusionnées (null) : la largeur s'ajoute à la cellule précédente
     const cells: { text: string; x: number; w: number; align: "left" | "right" }[] = [];
     row.cells.forEach((t, i) => {
-      // Une cellule fusionnée prend l'alignement de sa dernière colonne
-      if (t === null && cells.length) {
-        const c = cells[cells.length - 1];
-        c.w += widths[i];
-        c.align = doc.columns[i].align ?? "left";
-      } else cells.push({ text: safe(font, t ?? ""), x: xs[i], w: widths[i], align: doc.columns[i].align ?? "left" });
+      // Une cellule fusionnée garde l'alignement de sa première colonne
+      if (t === null && cells.length) cells[cells.length - 1].w += widths[i];
+      else cells.push({ text: safe(font, t ?? ""), x: xs[i], w: widths[i], align: doc.columns[i].align ?? "left" });
     });
     const lines = cells.map((c) => (c.align === "right" ? [c.text] : wrap(font, fsize, c.text, c.w - 2 * padX)));
     const h = Math.max(...lines.map((l) => l.length)) * lineH + 2 * padY;
-    if (y - h < M + 16) header(false);
+    // Un titre de mois n'est jamais laissé seul en bas de page
+    if (y - h * (row.style === "group" ? 2 : 1) < M + 16) header(false);
+    if (row.style === "group") page.drawRectangle({ x: M, y: y - h, width: W, height: h, color: C.soft });
     if (row.style === "total") page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: 1.5, color: C.ink });
     cells.forEach((c, k) => {
       lines[k].forEach((l, j) => {
