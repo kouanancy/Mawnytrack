@@ -29,7 +29,18 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - En-tête : menu à trois traits (Dépenses, Revenus, Budget, Prêts, Caisse, Investissements), logo
   « Mawny » couleur texte + « track » en vert, sélecteur de mois (`?m=YYYY-MM`), titre de section en orange rosé.
   Les volets non développés affichent « Bientôt disponible » (`lib/sections.ts`, champ `ready`). Réglages et
-  Se déconnecter figurent en bas du menu et de la barre latérale.
+  Se déconnecter figurent en bas du menu et de la barre latérale. Sélecteur de mois uniquement sur Dépenses,
+  Revenus et Budget (champ `month`) ; jamais sur Prêts, Caisse, Investissements, les fiches ni les relevés.
+- Champs date, heure et nombre : règle globale (`width:100%`, `min-width:0`, `appearance:none`, hauteur 44 px)
+  pour éviter la largeur minimale imposée par Safari iOS ; conteneurs en ligne avec `min-width:0`.
+- Impression : `@page` A4 portrait, marges de 15 mm ; tableaux en largeur 100 %, montants et dates sans retour
+  à la ligne, libellés longs à la ligne, lignes jamais coupées, en-tête de tableau répété. À l'écran, le relevé
+  défile dans son propre cadre sur téléphone.
+- Boutons d'impression : `printOrShare` (`lib/print.ts`) appelle `window.print()` directement dans le clic ;
+  dans l'application installée (PWA « standalone ») ou si l'impression manque, un PDF de même mise en page
+  (`lib/pdf.ts`, routes `/depenses/pdf` et `/prets/[id]/releve/pdf`) est proposé via `navigator.share`, sinon
+  téléchargé, avec « Préparation du document… » et un message en cas d'échec. Le relevé a aussi un bouton « PDF ».
+  Comme les e-mails, les PDF ne lisent pas les variables CSS : la palette claire y est écrite en ligne.
 - Champs mot de passe : toujours `components/PasswordInput.tsx` (bouton « œil » accessible, type="button").
 - Première utilisation (aucune ligne de budget) : Dépenses affiche l'écran de bienvenue expliquant comment créer
   la première ligne de budget et le premier revenu.
@@ -119,6 +130,27 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   (12 derniers mois, reste dû au début du mois, mouvements chronologiques, totaux, reste dû au dernier jour ;
   à l'impression, seule la feuille est imprimée, sur fond blanc).
 - Agrégats en SQL, une requête pour toutes les personnes ; mises à jour optimistes dans la liste et la fiche.
+
+## Caisse (`/caisse`, `lib/caisse.ts`)
+- Épargne supplémentaire d'un mois = revenus `income` du mois (jamais les emprunts) − budget prévu total du mois
+  (valeurs figées de `monthly_budgets` pour les mois terminés, figées à la consultation), minimum 0.
+- Disponible en caisse = somme des épargnes, du premier mois ayant un revenu au mois en cours, − toutes les
+  sorties vers les investissements (`project_disbursements`). Historique calculé en une seule requête SQL
+  (`savingsCtes`) ; `caisseAvailableSql` sert aussi au contrôle des sorties.
+- Écran : carte « Disponible en caisse » (total épargné, total investi, lien vers Investissements), graphique
+  « Évolution » (caisse cumulée en courbe pleine avec dégradé, épargne du mois en pointillés `--out`), « Détail par
+  mois » du plus récent au plus ancien.
+
+## Investissements (`/investissements`, `app/(app)/investissements/actions.ts`)
+- Financés uniquement par la caisse ; les sorties ne touchent ni le budget, ni les dépenses, ni le reste disponible.
+- Création : nom, type (`investment` | `project`), montant nécessaire. Liste : carte caisse (déjà investi, reste à
+  financer, % des besoins couverts), filtre Tout / Investissements / Projets, statut « En préparation », « En cours »
+  ou « Financé », éléments financés en bas.
+- Fiche : montant nécessaire modifiable (jamais sous l'engagé), engagé non modifiable, « Sortir de la caisse »,
+  historique des sorties avec suppression confirmée (le montant revient en caisse), suppression du projet.
+- Règle : une sortie ne dépasse jamais le disponible en caisse ni le reste à financer. Message pendant la saisie,
+  bouton désactivé, et contrôle serveur dans une transaction sous verrou consultatif par utilisateur
+  (`pg_advisory_xact_lock`), qui sérialise aussi les changements de montant nécessaire.
 
 ## Sécurité
 - Toute requête est filtrée par l'utilisateur connecté côté serveur (`user_id`), y compris les suppressions.

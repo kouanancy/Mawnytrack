@@ -7,6 +7,7 @@ import { CategoryFilter } from "@/components/CategoryFilter";
 import { IcoPrint, IcoWarn } from "@/components/Icons";
 import { Journal } from "@/components/Journal";
 import { useToast } from "@/components/Toast";
+import { printOrShare } from "@/lib/print";
 import { Brand } from "@/components/Brand";
 import type { Entry, MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount, plural } from "@/lib/format";
@@ -241,7 +242,14 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref, re
             className="iconbtn"
             aria-label={`Imprimer ${cur}`}
             title="Imprimer l'affichage"
-            onClick={() => window.print()}
+            onClick={() =>
+            printOrShare({
+              pdfUrl: `/depenses/pdf?m=${month}${activeFilter ? `&ligne=${activeFilter}` : ""}`,
+              filename: `sorties-${month}.pdf`,
+              title: `Sorties de ${monthName} · ${cur}`,
+              notify: toast,
+            })
+          }
           >
             <IcoPrint />
           </button>

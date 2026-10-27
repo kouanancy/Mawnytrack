@@ -203,6 +203,7 @@ details.add form{padding:0 14px 14px;display:flex;flex-direction:column;gap:10px
 .sh-scroll{overflow-x:auto}
 .sheet table{width:100%;border-collapse:collapse;font-size:13px;min-width:330px}
 .sheet th,.sheet td{padding:8px 6px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+.sheet tbody td:first-child{white-space:nowrap}
 .sheet thead th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .sheet .r{text-align:right;white-space:nowrap}
 .sheet .carry td{color:var(--muted);font-style:italic}
@@ -431,4 +432,39 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
   .statement{max-width:none}
   .sheet{border:0;padding:0}
   .sheet table{min-width:0}
+}
+
+/* ---------- Investissements et caisse ---------- */
+.proj .sub{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);gap:8px;flex-wrap:wrap}
+.proj[aria-disabled="true"]{pointer-events:none;opacity:.7}
+.ok-t{color:var(--in);font-weight:700}
+.caisse-cum{font-size:12px;color:var(--muted)}
+.legend .lgc{display:inline-block;width:14px;height:0;border-top:2.5px solid var(--accent)}
+.cols > .col > .proj + .proj{margin-top:0}
+
+/* ---------- Champs date, heure et nombre (Safari iOS impose une largeur minimale) ---------- */
+input[type="date"],input[type="time"],input[type="datetime-local"],input[type="month"],input[type="number"]{
+  width:100%;min-width:0;max-width:100%;box-sizing:border-box;display:block;
+  -webkit-appearance:none;appearance:none;height:44px;line-height:normal;text-align:left;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:0 12px;color:var(--ink)}
+input[type="date"]::-webkit-date-and-time-value,input[type="time"]::-webkit-date-and-time-value{text-align:left;margin:0}
+input[type="date"]::-webkit-calendar-picker-indicator{opacity:.7}
+.row > *,.row .field,.bl-grid > *,.cols > *,.split > *,.tiles > *{min-width:0}
+
+/* ---------- Impression : A4 portrait, marges de 15 mm, rien de coupé ---------- */
+@page{size:A4 portrait;margin:15mm}
+@media print{
+  body,body:has(.sidebar){padding:0;margin:0}
+  .app{max-width:none;padding:0;gap:10px}
+  .sh-scroll{overflow:visible}
+  .sheet{padding:0}
+  .sheet table{width:100%;min-width:0;table-layout:auto;font-size:11pt}
+  .sheet thead{display:table-header-group}
+  .sheet tfoot{display:table-row-group}
+  .sheet tr{break-inside:avoid;page-break-inside:avoid}
+  .sheet td,.sheet th{overflow-wrap:anywhere}
+  .sheet .r,.sheet td:first-child{white-space:nowrap;overflow-wrap:normal}
+  .meta b{white-space:normal;overflow:visible;text-overflow:clip}
+  .item{break-inside:avoid;page-break-inside:avoid}
+  .amt{white-space:nowrap}
 }

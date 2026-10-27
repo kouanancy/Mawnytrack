@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Brand } from "@/components/Brand";
 import { IcoBack } from "@/components/Icons";
+import { useToast } from "@/components/Toast";
+import { printOrShare, sharePdf } from "@/lib/print";
 import { fmt } from "@/lib/format";
 import type { Movement, Person } from "@/lib/loans";
 import { monthLabel } from "@/lib/month";
@@ -20,6 +22,13 @@ export function StatementView({ person: p, month, months, before, rows }: Props)
   const tl = rows.filter((r) => r.type === "loan").reduce((a, r) => a + r.amount, 0);
   const tp = rows.filter((r) => r.type === "pay").reduce((a, r) => a + r.amount, 0);
   const end = Math.max(0, before + tl - tp);
+  const toast = useToast();
+  const pdf = {
+    pdfUrl: `/prets/${p.id}/releve/pdf?m=${month}`,
+    filename: `releve-${month}.pdf`,
+    title: `Relevé ${L ? "de prêts" : "d'emprunts"} · ${p.name}`,
+    notify: toast,
+  };
   const lastDay = new Date(Date.UTC(y, m, 0)).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
   return (
@@ -40,8 +49,11 @@ export function StatementView({ person: p, month, months, before, rows }: Props)
             ))}
           </select>
         </div>
-        <button className="btn" type="button" style={{ flex: "1 1 120px" }} onClick={() => window.print()}>
+        <button className="btn" type="button" style={{ flex: "1 1 120px" }} onClick={() => printOrShare(pdf)}>
           Imprimer
+        </button>
+        <button className="btn ghost" type="button" style={{ flex: "1 1 100px" }} onClick={() => sharePdf(pdf)}>
+          PDF
         </button>
       </div>
       <article className="sheet">
