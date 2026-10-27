@@ -4,8 +4,14 @@ Application personnelle de suivi des finances (FCFA). Le prototype validé `docs
 fait référence pour le design, les textes et le comportement : le reproduire fidèlement.
 
 ## Design et textes
-- Palette Forêt uniquement (variables CSS dans `app/globals.css`, reprises du prototype), modes clair et sombre
-  via `prefers-color-scheme`. Polices Bricolage Grotesque (titres) et Figtree (texte) via `next/font`.
+- Palette Forêt uniquement. Toutes les couleurs sont des variables CSS définies dans `:root` de `app/globals.css`
+  (valeurs claires), redéfinies dans `@media (prefers-color-scheme: dark)` avec `color-scheme: dark` : l'application
+  suit automatiquement le réglage clair/sombre de l'appareil, comme le prototype (pas de bouton de thème).
+- Aucune couleur écrite en dur ailleurs (composants, styles en ligne, règles CSS) : toujours `var(--…)`.
+  Pour un nouveau ton, ajouter une variable dans les deux blocs.
+- Impression : toujours sur fond blanc (bloc `@media print` qui réimpose les valeurs claires).
+- Vérifier chaque écran en clair et en sombre avant de livrer.
+- Polices Bricolage Grotesque (titres) et Figtree (texte) via `next/font`.
 - Mise en page mobile d'abord : colonne de 480 px maximum.
 - Textes en français, impersonnels, avec vouvoiement (« Saisissez un montant », jamais de tutoiement ni de « je »).
 - Logo : `public/mawnytrack-icon.svg`. Icônes PNG et `app/favicon.ico` générés par `npm run icons`.

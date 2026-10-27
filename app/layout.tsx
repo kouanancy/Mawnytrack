@@ -23,6 +23,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // Contrôles natifs, barres de défilement et fond initial suivent le réglage clair/sombre de l'appareil
+  colorScheme: "light dark",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#E9F0EC" },
     { media: "(prefers-color-scheme: dark)", color: "#0B1714" },
