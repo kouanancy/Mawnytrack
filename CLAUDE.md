@@ -16,7 +16,8 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - Vérifier chaque écran en clair et en sombre avant de livrer.
 - Polices Bricolage Grotesque (titres) et Figtree (texte) via `next/font`.
 - Mise en page mobile d'abord. Règles multi-écran (bloc « Multi-écran » de `app/globals.css`) :
-  - téléphone (< 768 px) : colonne de 480 px, identique au prototype ;
+  - téléphone (< 768 px) : colonne de 480 px, identique au prototype ; dans l'en-tête, logo et nom centrés sur toute
+    la largeur de l'écran, menu à trois traits positionné à gauche sans décaler le logo, sélecteur de mois dessous ;
   - tablette portrait (768 – 1023 px) : menu à trois traits, colonne de 720 px, synthèse du budget en 4 tuiles,
     lignes de budget sur 2 colonnes ;
   - tablette paysage et ordinateur (≥ 1024 px) : barre latérale fixe à gauche (`components/Sidebar.tsx` : logo,
@@ -32,7 +33,11 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   Se déconnecter figurent en bas du menu et de la barre latérale. Sélecteur de mois uniquement sur Dépenses,
   Revenus et Budget (champ `month`) ; jamais sur Prêts, Caisse, Investissements, les fiches ni les relevés.
 - Champs date, heure et nombre : règle globale (`width:100%`, `min-width:0`, `appearance:none`, hauteur 44 px)
-  pour éviter la largeur minimale imposée par Safari iOS ; conteneurs en ligne avec `min-width:0`.
+  pour éviter la largeur minimale imposée par Safari iOS ; conteneurs en ligne avec `min-width:0`. Champs date :
+  valeur centrée verticalement et alignée à gauche (`display:flex`, `::-webkit-date-and-time-value` avec
+  `text-align:left`, `margin:0`, `line-height` = hauteur utile), même police et marge que les autres champs.
+- Budget : pas de barre de progression sur les lignes (budget, prêts, remboursements d'emprunts) ; le message sous
+  la ligne suffit. Les jauges restent sur la carte « Reste disponible », la Caisse et les Investissements.
 - Impression : `@page` A4 portrait, marges de 15 mm ; tableaux en largeur 100 %, montants et dates sans retour
   à la ligne, libellés longs à la ligne, lignes jamais coupées, en-tête de tableau répété. À l'écran, le relevé
   défile dans son propre cadre sur téléphone.
@@ -48,6 +53,9 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   « Préparation du document… » pendant le rendu, message et « Réessayer » en cas d'échec.
   Noms de fichiers sans accents : `Releve-Awa-octobre-2026.pdf`, `Releve-Awa-tout.pdf`, `Sorties-octobre-2026-Repas.pdf`.
   Comme les e-mails, les PDF ne lisent pas les variables CSS : la palette claire y est écrite en ligne.
+- Relevé des prêts : bouton « Imprimer » (une ligne, même hauteur que la liste « Période du relevé ») qui ouvre
+  l'aperçu. Sur téléphone, le tableau tient dans la largeur (police réduite, en-tête « Remb. »), montants des
+  lignes de total alignés à droite sous leur colonne ; « Reste dû au … » dans la colonne Reste dû.
 - Relevé des prêts (`lib/statement.ts`, commun à la page et au PDF) : période « Tout le relevé » (en premier) ou
   l'un des 12 derniers mois. Colonnes Date · Libellé · Prêt (ou Emprunt) · Remboursement · Reste dû (solde après
   chaque mouvement, somme cumulée calculée en SQL). Mois : « Reste dû au début du mois », total du mois, reste dû

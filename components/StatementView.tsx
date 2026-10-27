@@ -44,8 +44,9 @@ export function StatementView({ person: p, period, months, before, rows, today }
             ))}
           </select>
         </div>
-        <button className="btn" type="button" style={{ flex: "1 1 140px" }} onClick={() => setPreview(true)}>
-          Imprimer ou partager
+        {/* Ouvre l'aperçu : Partager, Imprimer, Télécharger le PDF, Fermer */}
+        <button className="btn nowrap" type="button" style={{ flex: "1 1 110px" }} onClick={() => setPreview(true)}>
+          Imprimer
         </button>
       </div>
       <article className="sheet">
@@ -66,7 +67,12 @@ export function StatementView({ person: p, period, months, before, rows, today }
                 <th>Date</th>
                 <th>Libellé</th>
                 <th className="r">{st.loanLabel}</th>
-                <th className="r">Remboursement</th>
+                <th className="r">
+                  <span className="th-long">Remboursement</span>
+                  <span className="th-short" aria-hidden="true">
+                    Remb.
+                  </span>
+                </th>
                 <th className="r">Reste dû</th>
               </tr>
             </thead>
@@ -137,10 +143,8 @@ export function StatementView({ person: p, period, months, before, rows, today }
                   </tr>
                 ) : r.kind === "end" ? (
                   <tr className="end" key={i}>
-                    <th colSpan={2}>{r.label}</th>
-                    <th className="r num" colSpan={3}>
-                      {fmt(r.balance)} FCFA
-                    </th>
+                    <th colSpan={4}>{r.label}</th>
+                    <th className="r num">{fmt(r.balance)} FCFA</th>
                   </tr>
                 ) : null,
               )}
