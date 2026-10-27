@@ -7,15 +7,15 @@ Suivi des finances personnelles en FCFA : dépenses, revenus et budget du mois.
 
 ## Mise en route
 
-1. Exécuter dans l'éditeur SQL de Neon, dans l'ordre :
-   1. `db/migrations/001_auth.sql`
-   2. `db/migrations/002_schema.sql`
-2. Variables d'environnement (voir `.env.example`) : `DATABASE_URL`, `BETTER_AUTH_SECRET`.
+1. Les migrations de `db/migrations/` s'appliquent automatiquement avant chaque compilation (`npm run build`,
+   donc à chaque déploiement Vercel). Lancement manuel : `npm run migrate`.
+2. Variables d'environnement (voir `.env.example`) : `DATABASE_URL` (et `DATABASE_URL_UNPOOLED` si disponible), `BETTER_AUTH_SECRET`.
 3. `npm install` puis `npm run dev`.
 
 ## Scripts
 
 - `npm run dev` : serveur de développement
-- `npm run build` : compilation de production
+- `npm run build` : migrations SQL puis compilation de production
+- `npm run migrate` : applique les migrations SQL en attente
 - `npm run typecheck` : vérification TypeScript
 - `npm run icons` : régénère les icônes PNG et le favicon depuis `public/mawnytrack-icon.svg`
