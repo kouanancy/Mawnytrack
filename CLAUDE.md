@@ -141,6 +141,8 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - Interface : dès la sélection d'une ligne épuisée, afficher « Budget déjà atteint pour « X ». Aucune nouvelle
   dépense possible sans modifier le budget prévu. » et désactiver le bouton ; pendant la saisie, si le montant
   dépasse le reste, afficher le reste disponible et désactiver le bouton (`checkExpense` dans `lib/ledger.ts`).
+  Aucun encadré supplémentaire après une saisie (lignes de budget, de prêts et de remboursements d'emprunts) :
+  le message rouge sous les champs, le bouton désactivé et la notification brève suffisent.
 - Serveur : vérification dans une transaction SQL qui verrouille la ligne (`FOR UPDATE`) puis n'insère que si le
   plafond le permet (`addExpense` dans `app/(app)/actions.ts`). Ne jamais contourner ce chemin pour insérer une dépense.
 - Un budget prévu ne peut pas être baissé sous le montant déjà dépensé du mois (`setPlanned`, même verrou).
