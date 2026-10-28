@@ -563,3 +563,14 @@ input[type="date"]::-webkit-datetime-edit{padding:0;line-height:42px}
 .move-edit > .field{flex:none}
 .move-edit .field input{background:var(--surface)}
 .move-edit .hint{margin:0}
+
+/* Caisse › Détail par mois : tableau libellé / montant par période */
+.item.cm{display:block}
+.cm-head{display:flex;align-items:flex-start;gap:12px}
+.cm-tbl{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+.cm-tbl th{text-align:left;font-weight:400;color:var(--ink);padding:3px 12px 3px 0}
+.cm-tbl td{text-align:right;white-space:nowrap;padding:3px 0;color:var(--ink)}
+.cm-tbl tr.total th,.cm-tbl tr.total td{font-weight:700;border-top:1px solid var(--line);padding-top:6px}
+.cm-tbl tr.total + tr th,.cm-tbl tr.total + tr td{padding-top:8px}
+.cm-tbl tr.soft th,.cm-tbl tr.soft td{color:var(--muted)}
+.cm-note{font-size:12px;color:var(--muted);margin:4px 0 0}
