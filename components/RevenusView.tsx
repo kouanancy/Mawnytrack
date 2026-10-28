@@ -3,11 +3,13 @@
 import { useOptimistic, useRef, useState, useTransition } from "react";
 import { addIncome, deleteTransaction } from "@/app/(app)/actions";
 import { Journal } from "@/components/Journal";
+import type { MoveEdit } from "@/components/MoveEditForm";
+import { updateMove } from "@/app/(app)/prets/actions";
 import { useToast } from "@/components/Toast";
-import type { PeriodSettings } from "@/lib/period";
-import type { MonthData } from "@/lib/data";
+import { periodOf, type PeriodSettings } from "@/lib/period";
+import type { Entry, MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount } from "@/lib/format";
-import { reduce, stamp, summary, tempId } from "@/lib/ledger";
+import { entryMoveCtx, reduce, stamp, summary, tempId } from "@/lib/ledger";
 
 export function RevenusView({ data, month, today, tz, ps }: { data: MonthData; month: string; today: string; tz: string; ps: PeriodSettings }) {
   const [view, addOp] = useOptimistic(data, reduce);
@@ -38,6 +40,7 @@ export function RevenusView({ data, month, today, tz, ps }: { data: MonthData; m
           lineId: null,
           lineLabel: null,
           direction: null,
+          personId: null,
           personName: null,
           day,
           time,
@@ -46,6 +49,16 @@ export function RevenusView({ data, month, today, tz, ps }: { data: MonthData; m
       });
       const res = await addIncome(sent);
       toast(res.ok ? `+${fmt(amt)} FCFA enregistrés` : res.error);
+    });
+  }
+
+  /** Modification d'un prêt, d'un emprunt ou d'un remboursement (transaction liée à une personne). */
+  function edit(e: Entry, v: MoveEdit) {
+    const keep = periodOf(v.date, ps) === month;
+    startTransition(async () => {
+      addOp({ type: "edit", keep, entry: { ...e, amount: v.amount, label: v.label || e.label, day: v.date } });
+      const res = await updateMove({ id: e.id, ...v });
+      toast(res.ok ? (keep ? "Modification enregistrée" : "Modification enregistrée : mouvement déplacé dans une autre période") : res.error);
     });
   }
 
@@ -114,6 +127,8 @@ export function RevenusView({ data, month, today, tz, ps }: { data: MonthData; m
           today={today}
           empty="Aucun revenu ce mois-ci. Ajoutez le premier ci-dessus."
           onDelete={remove}
+          moveCtx={(e, date) => entryMoveCtx(view, e, date, month, ps)}
+          onEdit={edit}
         />
       </div>
     </div>

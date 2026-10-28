@@ -69,6 +69,9 @@ export function periodSpan(key: string, s: PeriodSettings): string {
   return `du ${longDate(a, a.slice(0, 4) !== b.slice(0, 4))} au ${longDate(b)}`;
 }
 
+/** « 21 novembre 2026 » : dernier jour de la période (clôture, fin de journée). */
+export const periodEndLabel = (key: string, s: PeriodSettings) => longDate(periodEnd(key, s));
+
 /** Titre avec les dates quand le mois ne suit pas le calendrier : « novembre 2026 (22 oct. – 21 nov.) ». */
 export function periodTitle(key: string, s: PeriodSettings): string {
   return s.startDay === 1 ? periodName(key) : `${periodName(key)} (${periodRange(key, s)})`;

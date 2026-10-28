@@ -17,7 +17,7 @@ function reducePeople(people: Person[], op: Op): Person[] {
   const key = op.name.trim().toLowerCase();
   const found = people.find((p) => p.direction === "borrowed" && p.name.trim().toLowerCase() === key);
   if (found) return people.map((p) => (p === found ? { ...p, total: p.total + op.amount, due: p.due + op.amount } : p));
-  return [...people, { id: tempId(), name: op.name, direction: "borrowed", lineId: null, total: op.amount, back: 0, due: op.amount }];
+  return [...people, { id: tempId(), name: op.name, direction: "borrowed", lineId: null, total: op.amount, back: 0, due: op.amount, planned: 0 }];
 }
 
 /** Liste des prêts : tuiles, bascule prêté / emprunté, une ligne par personne, ajout. */
@@ -42,7 +42,7 @@ export function PretsView({ people, dir, today }: { people: Person[]; dir: Direc
     if (lent) {
       form.reset();
       startTransition(async () => {
-        addOp({ type: "person", person: { id: tempId(), name, direction: "lent", lineId: null, total: 0, back: 0, due: 0 } });
+        addOp({ type: "person", person: { id: tempId(), name, direction: "lent", lineId: null, total: 0, back: 0, due: 0, planned: 0 } });
         const r = await addLentPerson(name);
         toast(r.ok ? `${name} ajouté(e) à la liste des lignes` : r.error);
       });

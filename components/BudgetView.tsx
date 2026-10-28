@@ -6,10 +6,19 @@ import { addLine, deleteLine, setPlanned } from "@/app/(app)/actions";
 import { IcoTrash } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
 import type { Line, MonthData } from "@/lib/data";
-import { fmt, formatInput, parseAmount, plural } from "@/lib/format";
-import { isTemp, lineState, reduce, summary, tempId } from "@/lib/ledger";
+import { fmt, fmtNb, formatInput, parseAmount, plural } from "@/lib/format";
+import { isTemp, lineState, reduce, savingSplit, summary, tempId } from "@/lib/ledger";
 
-export function BudgetView({ data, month }: { data: MonthData; month: string }) {
+type Props = {
+  data: MonthData;
+  month: string;
+  /** Période terminée, en cours ou à venir */
+  status: "past" | "current" | "future";
+  /** Dernier jour de la période (« 21 novembre 2026 ») : le non dépensé rejoint la caisse à sa clôture */
+  endLabel: string;
+};
+
+export function BudgetView({ data, month, status, endLabel }: Props) {
   const [view, addOp] = useOptimistic(data, reduce);
   const [, startTransition] = useTransition();
   const toast = useToast();
@@ -21,6 +30,17 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
   const planned = view.lines.reduce((a, l) => a + l.planned, 0);
   const budget = view.lines.filter((l) => !l.personId);
   const lent = view.lines.filter((l) => l.direction === "lent");
+  const { unspent } = savingSplit(income, planned, out);
+  const unspentNote =
+    status === "future" || unspent === 0 ? null : unspent < 0 ? (
+      <small className="num">
+        − dépenses hors budget{status === "current" ? " à ce jour" : ""} : {fmtNb(-unspent)}&nbsp;FCFA
+      </small>
+    ) : (
+      <small className="num">
+        + non dépensé{status === "current" ? " à ce jour" : ""} : {fmtNb(unspent)}&nbsp;FCFA (ajouté à la caisse le {endLabel})
+      </small>
+    );
   const borrowed = view.lines.filter((l) => l.direction === "borrowed");
 
   function plan(l: Line, input: HTMLInputElement) {
@@ -56,7 +76,7 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
     startTransition(async () => {
       addOp({
         type: "addLine",
-        line: { id: tempId(), label, personId: null, direction: null, planned: p, spent: 0, expense: 0, refund: 0, due: 0 },
+        line: { id: tempId(), label, personId: null, direction: null, planned: p, spent: 0, expense: 0, refund: 0, due: 0, loans: 0, pays: 0 },
       });
       const res = await addLine({ label, planned: p });
       toast(res.ok ? "Ligne ajoutée" : res.error);
@@ -186,14 +206,18 @@ export function BudgetView({ data, month }: { data: MonthData; month: string }) 
           <strong className={`num${rest < 0 ? " bad" : ""}`}>{fmt(rest)}</strong>
         </div>
         {planned > income ? (
-          <p className="bad sum-warn">
-            Le budget prévu dépasse les revenus de {fmt(planned - income)} FCFA.
-          </p>
+          <>
+            <p className="bad sum-warn">
+              Le budget prévu dépasse les revenus de {fmt(planned - income)} FCFA.
+            </p>
+            {unspentNote && <div className="saving">{unspentNote}</div>}
+          </>
         ) : (
           <div className="saving">
             <span>Épargne supplémentaire</span>
             <strong className="num">{fmt(income - planned)} FCFA</strong>
             <small>Part des revenus qui n&apos;est affectée à aucune ligne du budget.</small>
+            {unspentNote}
           </div>
         )}
       </section>

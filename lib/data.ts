@@ -24,6 +24,9 @@ export type Line = {
   refund: number;
   /** Personne liée : somme due (prêt) ou reste à rendre (emprunt), tous mois confondus */
   due: number;
+  /** Personne liée, tous mois confondus : total prêté ou emprunté, et total remboursé */
+  loans: number;
+  pays: number;
 };
 
 export type Entry = {
@@ -34,6 +37,7 @@ export type Entry = {
   lineId: string | null;
   lineLabel: string | null;
   direction: Direction | null;
+  personId: string | null;
   personName: string | null;
   /** Jour local "YYYY-MM-DD" et heure "HH:MM" dans le fuseau de l'application */
   day: string;
@@ -85,6 +89,8 @@ function linesQuery(userId: string, month: string, ps: PeriodSettings) {
       group by t.line_id
     ), d as (
       select t.person_id,
+        coalesce(sum(t.amount) filter (where (p.direction = 'lent' and t.kind = 'expense') or (p.direction = 'borrowed' and t.kind = 'borrow')), 0) as loans,
+        coalesce(sum(t.amount) filter (where (p.direction = 'lent' and t.kind = 'refund') or (p.direction = 'borrowed' and t.kind = 'expense')), 0) as pays,
         sum(case
           when p.direction = 'lent' and t.kind = 'expense' then t.amount
           when p.direction = 'lent' and t.kind = 'refund' then -t.amount
@@ -100,7 +106,7 @@ function linesQuery(userId: string, month: string, ps: PeriodSettings) {
       case when p.direction = 'lent' then greatest(coalesce(a.spent, 0), 0) else greatest(coalesce(s.spent, 0), 0) end as spent,
       case when p.direction = 'lent' then coalesce(a.expense, 0) else coalesce(s.expense, 0) end as expense,
       case when p.direction = 'lent' then coalesce(a.refund, 0) else coalesce(s.refund, 0) end as refund,
-      greatest(coalesce(d.due, 0), 0) as due
+      greatest(coalesce(d.due, 0), 0) as due, coalesce(d.loans, 0) as loans, coalesce(d.pays, 0) as pays
     from budget_lines bl
     left join people p on p.id = bl.person_id and p.user_id = bl.user_id
     left join monthly_budgets mb on mb.line_id = bl.id and mb.month = (${start})::date
@@ -127,7 +133,7 @@ function entriesQuery(userId: string, month: string, kinds: Kind[], ps: PeriodSe
   const { lo, hi } = periodBounds(month, ps);
   const kindList: SQL = sql.join(kinds.map((k) => sql`${k}`), sql`, `);
   return db.execute(sql`
-    select t.id, t.kind, t.amount, t.label, t.line_id, bl.label as line_label, p.direction, p.name as person_name,
+    select t.id, t.kind, t.amount, t.label, t.line_id, bl.label as line_label, p.direction, t.person_id, p.name as person_name,
       to_char(t.occurred_at at time zone ${APP_TZ}, 'YYYY-MM-DD') as day,
       to_char(t.occurred_at at time zone ${APP_TZ}, 'HH24:MI') as time,
       t.occurred_at as at
@@ -162,6 +168,8 @@ function toLine(r: Record<string, unknown>): Line {
     expense: n(r.expense),
     refund: n(r.refund),
     due: n(r.due),
+    loans: n(r.loans),
+    pays: n(r.pays),
   };
 }
 
@@ -174,6 +182,7 @@ function toEntry(r: Record<string, unknown>): Entry {
     lineId: (r.line_id as string) ?? null,
     lineLabel: (r.line_label as string) ?? null,
     direction: (r.direction as Direction) ?? null,
+    personId: (r.person_id as string) ?? null,
     personName: (r.person_name as string) ?? null,
     day: String(r.day),
     time: String(r.time),

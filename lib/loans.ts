@@ -21,6 +21,8 @@ export type Person = {
   back: number;
   /** Reste dû (lent) ou reste à rendre (borrowed), jamais négatif */
   due: number;
+  /** Budget prévu de sa ligne (0 = sans plafond) */
+  planned: number;
 };
 
 export type Movement = {
@@ -44,7 +46,7 @@ const PAY = sql`((p.direction = 'lent' and t.kind = 'refund') or (p.direction = 
 
 function peopleQuery(userId: string, personId?: string) {
   return db.execute(sql`
-    select p.id, p.name, p.direction, bl.id as line_id,
+    select p.id, p.name, p.direction, bl.id as line_id, coalesce(bl.planned, 0) as planned,
       coalesce(sum(t.amount) filter (where ${LOAN}), 0) as total,
       coalesce(sum(t.amount) filter (where ${PAY}), 0) as back
     from people p
@@ -65,6 +67,7 @@ function toPerson(r: Row): Person {
     total,
     back,
     due: Math.max(0, total - back),
+    planned: n(r.planned),
   };
 }
 

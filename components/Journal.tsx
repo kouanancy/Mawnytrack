@@ -2,26 +2,37 @@
 
 import { useState } from "react";
 import { IcoTrash } from "@/components/Icons";
+import { MoveEditForm, type MoveEdit } from "@/components/MoveEditForm";
 import type { Entry } from "@/lib/data";
 import { fmt } from "@/lib/format";
-import { category, deleteNotice, isTemp } from "@/lib/ledger";
+import { category, deleteNotice, isMove, isTemp, type MoveCtx } from "@/lib/ledger";
 import { dayLabel } from "@/lib/month";
 
-/** Journal du mois groupé par jour, avec suppression confirmée dans la page. */
+/**
+ * Journal du mois groupé par jour, avec suppression confirmée dans la page. Les lignes liées à une personne
+ * (prêts, emprunts, remboursements) s'ouvrent au toucher dans un formulaire de modification.
+ */
 export function Journal({
   entries,
   mode,
   today,
   empty,
   onDelete,
+  moveCtx,
+  onEdit,
 }: {
   entries: Entry[];
   mode: "out" | "in";
   today: string;
   empty: string;
   onDelete: (id: string) => void;
+  /** Contexte de contrôle d'un mouvement pour une nouvelle date (null : non modifiable) */
+  moveCtx?: (e: Entry, date: string) => MoveCtx | null;
+  onEdit?: (e: Entry, v: MoveEdit) => void;
 }) {
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const editable = (e: Entry) => !!onEdit && !!moveCtx && isMove(e) && !isTemp(e.id) && !!moveCtx(e, e.day);
 
   if (!entries.length)
     return (
@@ -76,8 +87,22 @@ export function Journal({
                       </button>
                     </div>
                   </div>
+                ) : editing === e.id && editable(e) ? (
+                  <div className="item editing" key={e.id}>
+                    <MoveEditForm
+                      title={category(e)}
+                      initial={{ amount: e.amount, label: e.label, date: e.day }}
+                      today={today}
+                      ctx={(date) => moveCtx!(e, date)!}
+                      onCancel={() => setEditing(null)}
+                      onSave={(v) => {
+                        setEditing(null);
+                        onEdit!(e, v);
+                      }}
+                    />
+                  </div>
                 ) : (
-                  <Row key={e.id} e={e} onAsk={() => setConfirm(e.id)} />
+                  <Row key={e.id} e={e} onAsk={() => setConfirm(e.id)} onEdit={editable(e) ? () => setEditing(e.id) : undefined} />
                 ),
               )}
             </div>
@@ -88,26 +113,37 @@ export function Journal({
   );
 }
 
-function Row({ e, onAsk }: { e: Entry; onAsk: () => void }) {
+function Row({ e, onAsk, onEdit }: { e: Entry; onAsk: () => void; onEdit?: () => void }) {
   const out = e.kind === "expense";
   const cat = category(e);
   // Saisie en cours d'envoi : affichée immédiatement, surlignée brièvement
   const pending = isTemp(e.id);
-  return (
-    <div className={`item${pending ? " fresh" : ""}`}>
-      <div className={`ico ${out ? "o" : "i"}`} aria-hidden="true">
+  const body = (
+    <>
+      <span className={`ico ${out ? "o" : "i"}`} aria-hidden="true">
         {cat.replace(/^(Prêt|Remboursement|Emprunt) · /, "").slice(0, 2)}
-      </div>
-      <div className="meta">
+      </span>
+      <span className="meta">
         <b>{e.label}</b>
         <span>
           {e.time} · {cat}
         </span>
-      </div>
-      <div className={`amt num ${out ? "o" : "i"}`}>
+      </span>
+      <span className={`amt num ${out ? "o" : "i"}`}>
         {out ? "−" : "+"}
         {fmt(e.amount)}
-      </div>
+      </span>
+    </>
+  );
+  return (
+    <div className={`item${pending ? " fresh" : ""}`}>
+      {onEdit ? (
+        <button type="button" className="item-hit" aria-label={`Modifier ${e.label}, ${fmt(e.amount)} FCFA`} onClick={onEdit}>
+          {body}
+        </button>
+      ) : (
+        body
+      )}
       <button type="button" className="del" aria-label={`Supprimer ${e.label}`} disabled={pending} onClick={onAsk}>
         <IcoTrash />
       </button>

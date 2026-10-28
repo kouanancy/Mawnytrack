@@ -171,17 +171,43 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   statut « En cours » ou « Soldé », sans échéance) ; fiche `/prets/[id]` (retour, icône d'impression, totaux,
   formulaire selon le sens, historique du plus récent au plus ancien) ; relevé `/prets/[id]/releve?m=YYYY-MM`
   (« Tout le relevé » ou l'un des 12 derniers mois, colonne « Reste dû » ; voir Impression).
-- Agrégats en SQL, une requête pour toutes les personnes ; mises à jour optimistes dans la liste et la fiche.
+- Modification d'un mouvement (prêt accordé, remboursement reçu, emprunt reçu, remboursement d'emprunt) : un appui
+  sur la ligne (historique de la fiche, journaux Dépenses et Revenus) ouvre dans la page le formulaire
+  `components/MoveEditForm.tsx` (Montant, Libellé, Date, « Enregistrer », « Annuler » ou Échap). La transaction
+  elle-même est modifiée (`updateMove` dans `app/(app)/prets/actions.ts`) : fiche, relevés, Budget, reste
+  disponible, caisse et rapports suivent. Date jamais dans le futur ; nouvelle date = même heure locale.
+- Contrôles de modification (`checkMove` dans `lib/ledger.ts`, pendant la saisie, et serveur dans une transaction
+  sous verrou de la ligne puis de la personne, `FOR UPDATE`) ; une modification qui n'aggrave pas la situation
+  reste possible ; refus avec le montant minimum ou maximum autorisé :
+  - total remboursé jamais supérieur au total prêté ou emprunté (prêt ou emprunt jamais sous le déjà remboursé,
+    remboursement jamais au-dessus du dû en comptant l'ancien montant) ;
+  - personne `lent` : accordé jamais au-dessus du budget prévu de sa ligne ;
+  - remboursement d'emprunt : jamais au-dessus du reste à rendre ni du budget de sa ligne pour la période de la
+    nouvelle date (l'interface ne connaît que la période affichée ; le serveur contrôle les autres).
+- Agrégats en SQL, une requête pour toutes les personnes ; mises à jour optimistes dans la liste, la fiche et les
+  journaux (opération `edit` du réducteur).
 
 ## Caisse (`/caisse`, `lib/caisse.ts`)
-- Épargne supplémentaire d'un mois = revenus `income` du mois (jamais les emprunts) − budget prévu total du mois
-  (valeurs figées de `monthly_budgets` pour les mois terminés, figées à la consultation), minimum 0.
-- Disponible en caisse = somme des épargnes, du premier mois ayant un revenu au mois en cours, − toutes les
-  sorties vers les investissements (`project_disbursements`). Historique calculé en une seule requête SQL
-  (`savingsCtes`) ; `caisseAvailableSql` sert aussi au contrôle des sorties.
-- Écran : carte « Disponible en caisse » (total épargné, total investi, lien vers Investissements), graphique
-  « Évolution » (caisse cumulée en courbe pleine avec dégradé, épargne du mois en pointillés `--out`), « Détail par
-  mois » du plus récent au plus ancien.
+- Par période (mois budgétaire), revenus `income` seuls (jamais les emprunts) :
+  - « Épargne prévue » = revenus − budget prévu total de la période (valeurs figées de `monthly_budgets` pour les
+    périodes terminées, figées à la consultation), minimum 0 ;
+  - période terminée : épargne = revenus − dépenses nettes réelles (`expense` − `refund`), minimum 0, soit
+    l'épargne prévue + le « non dépensé » (aucune ligne ne dépassant son budget, il est normalement positif ;
+    négatif seulement si des lignes sans plafond l'emportent : affiché « dépenses hors budget ») ;
+  - période en cours : épargne = épargne prévue ; le non dépensé n'est ajouté qu'à la clôture (fin du dernier jour,
+    fuseau Africa/Abidjan) — même règle partout (`savingSplit` dans `lib/ledger.ts` côté interface).
+- Disponible en caisse = somme des épargnes, de la première période ayant un revenu à la période en cours,
+  − toutes les sorties vers les investissements (`project_disbursements`). Historique calculé en une seule requête
+  SQL (`savingsCtes`), recalculé à chaque lecture : modifier ou supprimer une transaction d'une période terminée met
+  à jour son épargne et la caisse. `caisseAvailableSql` sert aussi au contrôle des sorties (Investissements) et au
+  rapport hebdomadaire.
+- Écran : carte « Disponible en caisse » (total épargné, « dont non dépensé : Z », total investi, lien vers
+  Investissements), graphique « Évolution » (caisse cumulée en courbe pleine avec dégradé, épargne de la période en
+  pointillés `--out`), « Détail par mois » du plus récent au plus ancien : « Épargne prévue X + non dépensé Y »,
+  total de la période et « Caisse fin de mois » ; période en cours : « Épargne prévue X · non dépensé ajouté le
+  [dernier jour] » et « Caisse à ce jour ».
+- Budget › « Épargne supplémentaire » : épargne prévue, puis « + non dépensé à ce jour : X FCFA (ajouté à la caisse
+  le [dernier jour]) » pour la période en cours (« + non dépensé : X FCFA » pour une période terminée).
 
 ## Investissements (`/investissements`, `app/(app)/investissements/actions.ts`)
 - Financés uniquement par la caisse ; les sorties ne touchent ni le budget, ni les dépenses, ni le reste disponible.

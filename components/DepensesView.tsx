@@ -6,14 +6,16 @@ import { addExpense, deleteTransaction } from "@/app/(app)/actions";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { IcoPrint, IcoWarn } from "@/components/Icons";
 import { Journal } from "@/components/Journal";
+import type { MoveEdit } from "@/components/MoveEditForm";
+import { updateMove } from "@/app/(app)/prets/actions";
 import { useToast } from "@/components/Toast";
-import type { PeriodSettings } from "@/lib/period";
+import { periodOf, type PeriodSettings } from "@/lib/period";
 import { PdfPreview } from "@/components/PdfPreview";
 import { sortiesFilename } from "@/lib/statement";
 import { Brand } from "@/components/Brand";
 import type { Entry, MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount, plural } from "@/lib/format";
-import { checkExpense, defaultLabel, isExhausted, lineGroups, reduce, stamp, summary, tempId } from "@/lib/ledger";
+import { checkExpense, defaultLabel, entryMoveCtx, isExhausted, lineGroups, reduce, stamp, summary, tempId } from "@/lib/ledger";
 
 type Props = {
   data: MonthData;
@@ -71,6 +73,7 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
       lineId: line.id,
       lineLabel: line.label,
       direction: line.direction,
+      personId: line.personId,
       personName: line.personId ? line.label : null,
       day,
       time,
@@ -91,6 +94,16 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
       } else if (line.direction === "lent") toast(`${fmt(amt)} FCFA ajoutés aux prêts de ${line.label}`);
       else if (line.direction === "borrowed") toast(`${fmt(amt)} FCFA remboursés à ${line.label}`);
       else toast(`−${fmt(amt)} FCFA sur « ${line.label} »`);
+    });
+  }
+
+  /** Modification d'un prêt, d'un emprunt ou d'un remboursement (transaction liée à une personne). */
+  function edit(e: Entry, v: MoveEdit) {
+    const keep = periodOf(v.date, ps) === month;
+    startTransition(async () => {
+      addOp({ type: "edit", keep, entry: { ...e, amount: v.amount, label: v.label || e.label, day: v.date } });
+      const res = await updateMove({ id: e.id, ...v });
+      toast(res.ok ? (keep ? "Modification enregistrée" : "Modification enregistrée : mouvement déplacé dans une autre période") : res.error);
     });
   }
 
@@ -267,6 +280,8 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
           today={today}
           empty={activeFilter ? "Aucune sortie dans cette catégorie ce mois-ci." : "Aucune sortie ce mois-ci. La première saisie apparaîtra ici."}
           onDelete={remove}
+          moveCtx={(e, date) => entryMoveCtx(view, e, date, month, ps)}
+          onEdit={edit}
         />
         <div className="printonly ptotal">
           <span>Total {cur}</span>
