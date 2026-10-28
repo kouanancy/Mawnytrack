@@ -2,6 +2,8 @@ import "server-only";
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { APP_TZ } from "@/lib/month";
+import type { PeriodSettings } from "@/lib/period";
+import { getPeriodSettings, periodKeySql } from "@/lib/period-server";
 
 // Caisse : épargne supplémentaire de chaque mois = revenus `income` du mois (jamais les emprunts)
 // − budget prévu total du mois (valeur figée de monthly_budgets, sinon budget_lines.planned), minimum 0.
@@ -33,22 +35,21 @@ type Row = Record<string, unknown>;
 type Rows = { rows: Row[] };
 const n = (v: unknown) => (v == null ? 0 : Number(v));
 
-const monthOf = (col: SQL) => sql`date_trunc('month', ${col} at time zone ${APP_TZ})::date`;
 
-/** Mois de la caisse : du premier mois ayant un revenu jusqu'au mois en cours. */
-const monthsCte = (userId: string) => sql`
+/** Périodes (mois budgétaires) de la caisse : de la première ayant un revenu jusqu'à la période en cours. */
+const monthsCte = (userId: string, ps: PeriodSettings) => sql`
   first as (
-    select min(${monthOf(sql`occurred_at`)}) as m from transactions where user_id = ${userId} and kind = 'income'
+    select min(${periodKeySql(sql`occurred_at`, ps)}) as m from transactions where user_id = ${userId} and kind = 'income'
   ), months as (
-    select generate_series(first.m, ${monthOf(sql`now()`)}, interval '1 month')::date as m
+    select generate_series(first.m, ${periodKeySql(sql`now()`, ps)}, interval '1 month')::date as m
     from first where first.m is not null
   )`;
 
 /** Épargne supplémentaire de chaque mois (agrégats SQL, une seule requête). */
-const savingsCtes = (userId: string) => sql`
-  ${monthsCte(userId)},
+const savingsCtes = (userId: string, ps: PeriodSettings) => sql`
+  ${monthsCte(userId, ps)},
   inc as (
-    select ${monthOf(sql`occurred_at`)} as m, sum(amount) as s
+    select ${periodKeySql(sql`occurred_at`, ps)} as m, sum(amount) as s
     from transactions where user_id = ${userId} and kind = 'income' group by 1
   ), pl as (
     select months.m, sum(coalesce(mb.planned, bl.planned)) as p
@@ -64,31 +65,32 @@ const savingsCtes = (userId: string) => sql`
   )`;
 
 /** Disponible en caisse, en une expression SQL scalaire (réutilisée par le contrôle des sorties). */
-export const caisseAvailableSql = (userId: string) => sql`(
-  with ${savingsCtes(userId)}
+export const caisseAvailableSql = (userId: string, ps: PeriodSettings) => sql`(
+  with ${savingsCtes(userId, ps)}
   select coalesce((select sum(saving) from sv), 0)
     - coalesce((select sum(amount) from project_disbursements where user_id = ${userId}), 0)
 )`;
 
-/** Fige les budgets des mois terminés de la caisse (comme à leur consultation dans le Budget). */
-function freezePastMonths(userId: string) {
+/** Fige les budgets des périodes terminées de la caisse (comme à leur consultation dans le Budget). */
+function freezePastMonths(userId: string, ps: PeriodSettings) {
   return db.execute(sql`
-    with ${monthsCte(userId)}
+    with ${monthsCte(userId, ps)}
     insert into monthly_budgets (user_id, line_id, month, planned)
     select bl.user_id, bl.id, months.m, bl.planned
     from months cross join budget_lines bl
-    where bl.user_id = ${userId} and months.m < ${monthOf(sql`now()`)}
+    where bl.user_id = ${userId} and months.m < ${periodKeySql(sql`now()`, ps)}
     on conflict (line_id, month) do nothing`);
 }
 
 /** Historique complet de la caisse, mois par mois, et totaux. */
 export async function getCaisse(userId: string) {
+  const ps = await getPeriodSettings(userId);
   const [, hist, tot] = (await db.batch([
-    freezePastMonths(userId),
+    freezePastMonths(userId, ps),
     db.execute(sql`
-      with ${savingsCtes(userId)},
+      with ${savingsCtes(userId, ps)},
       outm as (
-        select ${monthOf(sql`occurred_at`)} as m, sum(amount) as s
+        select ${periodKeySql(sql`occurred_at`, ps)} as m, sum(amount) as s
         from project_disbursements where user_id = ${userId} group by 1
       )
       select to_char(sv.m, 'YYYY-MM') as month, sv.income, sv.planned, sv.saving,
@@ -109,7 +111,7 @@ export async function getCaisse(userId: string) {
   }));
   const saved = months.reduce((a, m) => a + m.saving, 0);
   const invested = n(tot.rows[0]?.invested);
-  return { months, saved, invested, available: saved - invested };
+  return { months, saved, invested, available: saved - invested, ps };
 }
 
 const projectCols = sql`p.id, p.name, p.kind, p.target, coalesce(sum(d.amount), 0) as engaged`;
@@ -130,7 +132,7 @@ export async function getProjects(userId: string) {
       where p.user_id = ${userId}
       group by p.id
       order by p.created_at`),
-    db.execute(sql`select ${caisseAvailableSql(userId)} as available`),
+    db.execute(sql`select ${caisseAvailableSql(userId, await getPeriodSettings(userId))} as available`),
   ])) as unknown as Rows[];
   return { projects: projects.rows.map(toProject), available: n(avail.rows[0]?.available) };
 }
@@ -150,7 +152,7 @@ export async function getProject(userId: string, projectId: string) {
       from project_disbursements
       where user_id = ${userId} and project_id = ${projectId}
       order by occurred_at desc, created_at desc`),
-    db.execute(sql`select ${caisseAvailableSql(userId)} as available`),
+    db.execute(sql`select ${caisseAvailableSql(userId, await getPeriodSettings(userId))} as available`),
   ])) as unknown as Rows[];
   const p = project.rows[0];
   if (!p) return null;

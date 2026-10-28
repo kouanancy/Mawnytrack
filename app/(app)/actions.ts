@@ -3,9 +3,10 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
-import { monthBounds } from "@/lib/data";
 import { fmt } from "@/lib/format";
-import { APP_TZ, currentMonth, isValidMonth } from "@/lib/month";
+import { APP_TZ, isValidMonth } from "@/lib/month";
+import { currentPeriod, periodStart, type PeriodSettings } from "@/lib/period";
+import { getPeriodSettings, periodBounds, periodKeySql } from "@/lib/period-server";
 import { actionUserId } from "@/lib/session";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
@@ -24,11 +25,13 @@ function done(): ActionResult {
   return { ok: true };
 }
 
-/** Horodatage d'une saisie : maintenant pour le mois en cours, sinon le 1er du mois affiché à l'heure actuelle. */
-function occurredAt(month: string) {
-  const { start } = monthBounds(month);
-  return sql`(case when ${month} = to_char(now() at time zone ${APP_TZ}, 'YYYY-MM') then now()
-    else (((${start})::date) + (now() at time zone ${APP_TZ})::time) at time zone ${APP_TZ} end)`;
+/**
+ * Horodatage d'une saisie : maintenant pour le mois budgétaire en cours, sinon le premier jour de la période
+ * affichée à l'heure actuelle.
+ */
+function occurredAt(month: string, ps: PeriodSettings) {
+  if (month === currentPeriod(ps)) return sql`now()`;
+  return sql`(((${periodStart(month, ps)})::date) + (now() at time zone ${APP_TZ})::time) at time zone ${APP_TZ}`;
 }
 
 /* ---------- Dépenses ---------- */
@@ -46,7 +49,8 @@ export async function addExpense(input: { month: string; amount: number; label: 
   if (!isAmount(amount)) return fail("Saisissez un montant.");
   if (typeof lineId !== "string" || !UUID_RE.test(lineId)) return fail("Choisissez une ligne de budget.");
   const label = cleanText(input.label, 120);
-  const { start, lo, hi } = monthBounds(month);
+  const ps = await getPeriodSettings(userId);
+  const { start, lo, hi } = periodBounds(month, ps);
 
   const [, res] = await db.batch([
     db.execute(sql`select id from budget_lines where id = ${lineId} and user_id = ${userId} for update`),
@@ -75,7 +79,7 @@ export async function addExpense(input: { month: string; amount: number; label: 
             when ln.direction = 'borrowed' then 'Remboursement à ' || ln.person_name
             when ln.direction = 'lent' then 'Prêt'
             else ln.label end),
-          ln.id, ln.person_id, ${occurredAt(month)}
+          ln.id, ln.person_id, ${occurredAt(month, ps)}
         from ln, sp, du
         where (ln.planned = 0 or sp.spent + ${amount}::bigint <= ln.planned)
           and (ln.direction is distinct from 'borrowed' or ${amount}::bigint <= du.due)
@@ -110,7 +114,7 @@ export async function addIncome(input: { month: string; amount: number; label: s
     kind: "income",
     amount: input.amount,
     label: cleanText(input.label, 120) || "Revenu",
-    occurredAt: occurredAt(input.month),
+    occurredAt: occurredAt(input.month, await getPeriodSettings(userId)),
   });
   return done();
 }
@@ -152,8 +156,8 @@ export async function deleteLine(id: string): Promise<ActionResult> {
 
 /**
  * Modifie le budget prévu d'une ligne pour le mois affiché.
- * - Mois terminé : valeur figée de ce mois (monthly_budgets).
- * - Mois en cours ou à venir : budget par défaut (budget_lines.planned), qui vaut pour tous les mois non figés.
+ * - Mois budgétaire terminé : valeur figée de cette période (monthly_budgets).
+ * - Mois en cours ou à venir : budget par défaut (budget_lines.planned), qui vaut pour toutes les périodes non figées.
  * Le nouveau montant ne peut pas être inférieur au dépensé des mois concernés (0 = pas de plafond).
  */
 export async function setPlanned(input: { lineId: string; month: string; planned: number }): Promise<ActionResult> {
@@ -165,9 +169,11 @@ export async function setPlanned(input: { lineId: string; month: string; planned
   const lock = db.execute(sql`select id from budget_lines where id = ${lineId} and user_id = ${userId} for update`);
   const net = sql`sum(case kind when 'expense' then amount when 'refund' then -amount else 0 end)`;
 
+  const ps = await getPeriodSettings(userId);
+  const current = currentPeriod(ps);
   let res;
-  if (month < currentMonth()) {
-    const { start, lo, hi } = monthBounds(month);
+  if (month < current) {
+    const { start, lo, hi } = periodBounds(month, ps);
     [, res] = await db.batch([
       lock,
       db.execute(sql`
@@ -195,7 +201,7 @@ export async function setPlanned(input: { lineId: string; month: string; planned
         from ln, sp, al`),
     ]);
   } else {
-    const { lo } = monthBounds(currentMonth());
+    const { lo } = periodBounds(current, ps);
     [, res] = await db.batch([
       lock,
       db.execute(sql`
@@ -210,7 +216,7 @@ export async function setPlanned(input: { lineId: string; month: string; planned
           where t.user_id = ${userId} and t.line_id = ${lineId}
         ), sp as (
           select coalesce(max(x.spent), 0) as spent from (
-            select date_trunc('month', occurred_at at time zone ${APP_TZ})::date as m, ${net} as spent
+            select ${periodKeySql(sql`occurred_at`, ps)} as m, ${net} as spent
             from transactions
             where user_id = ${userId} and line_id = ${lineId} and occurred_at >= ${lo}
             group by 1

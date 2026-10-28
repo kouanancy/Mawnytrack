@@ -7,6 +7,7 @@ import { CategoryFilter } from "@/components/CategoryFilter";
 import { IcoPrint, IcoWarn } from "@/components/Icons";
 import { Journal } from "@/components/Journal";
 import { useToast } from "@/components/Toast";
+import type { PeriodSettings } from "@/lib/period";
 import { PdfPreview } from "@/components/PdfPreview";
 import { sortiesFilename } from "@/lib/statement";
 import { Brand } from "@/components/Brand";
@@ -14,9 +15,20 @@ import type { Entry, MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount, plural } from "@/lib/format";
 import { checkExpense, defaultLabel, isExhausted, lineGroups, reduce, stamp, summary, tempId } from "@/lib/ledger";
 
-type Props = { data: MonthData; month: string; monthName: string; today: string; tz: string; budgetHref: string; revenusHref: string };
+type Props = {
+  data: MonthData;
+  month: string;
+  /** Nom de la période (« novembre 2026 ») et titre avec ses dates (« novembre 2026 (22 oct. – 21 nov.) ») */
+  monthName: string;
+  monthTitle: string;
+  today: string;
+  tz: string;
+  ps: PeriodSettings;
+  budgetHref: string;
+  revenusHref: string;
+};
 
-export function DepensesView({ data, month, monthName, today, tz, budgetHref, revenusHref }: Props) {
+export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps, budgetHref, revenusHref }: Props) {
   const [view, addOp] = useOptimistic(data, reduce);
   const [, startTransition] = useTransition();
   const toast = useToast();
@@ -50,7 +62,7 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref, re
     if (!line) return;
     if (!amt) return toast("Saisissez un montant");
     if (!check.ok) return toast(line.planned && line.spent >= line.planned ? "Budget déjà atteint sur cette ligne" : "Montant supérieur au reste de la ligne");
-    const { day, time } = stamp(month, tz);
+    const { day, time } = stamp(month, tz, ps);
     const entry: Entry = {
       id: tempId(),
       kind: "expense",
@@ -228,7 +240,7 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref, re
         <div className="printonly">
           <Brand size={22} style={{ fontSize: 18 }} />
           <b>
-            Sorties de {monthName} · {cur}
+            Sorties de {monthTitle} · {cur}
           </b>
         </div>
         <div className="sect">
@@ -265,7 +277,7 @@ export function DepensesView({ data, month, monthName, today, tz, budgetHref, re
         <PdfPreview
           pdfUrl={`/depenses/pdf?m=${month}${activeFilter ? `&ligne=${activeFilter}` : ""}`}
           filename={sortiesFilename(monthName, filterLine?.label)}
-          title={`Sorties de ${monthName} · ${cur}`}
+          title={`Sorties de ${monthTitle} · ${cur}`}
           onClose={() => setPreview(false)}
         />
       )}

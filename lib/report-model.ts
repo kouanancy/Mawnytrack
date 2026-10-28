@@ -1,7 +1,7 @@
 // Rapport hebdomadaire : données figées (enregistrées dans weekly_reports.data) et mise en forme commune
 // à la page /rapports/[id], au PDF et à l'e-mail. Rien ici ne lit la base : tout part de WeeklyReport.
 import { fmt } from "@/lib/format";
-import { longDay, monthLabel } from "@/lib/month";
+import { longDay } from "@/lib/month";
 
 export type ReportLine = {
   label: string;
@@ -20,8 +20,10 @@ export type WeeklyReport = {
   version: 1;
   weekStart: string;
   weekEnd: string;
-  /** Mois de référence pour « depuis le début du mois » */
+  /** Mois de référence (période du mois budgétaire) pour « depuis le début du mois » */
   month: string;
+  /** Premier jour de cette période (absent des rapports enregistrés avant le réglage : 1er du mois) */
+  monthStart?: string;
   generatedAt: string;
   week: { income: number; borrow: number; expense: number; refund: number };
   monthToDate: { income: number; borrow: number; out: number; rest: number };
@@ -63,10 +65,14 @@ export const reportSubject = (r: Pick<WeeklyReport, "weekStart" | "weekEnd">) =>
 /** « Rapport-Mawnytrack-2026-10-26.pdf » (date du dimanche). */
 export const reportFilename = (r: Pick<WeeklyReport, "weekEnd">) => `Rapport-Mawnytrack-${r.weekEnd}.pdf`;
 
+/** « 1er octobre 2026 » ou « 22 octobre 2026 » : début de la période de référence. */
+export const sinceLabel = (r: Pick<WeeklyReport, "month" | "monthStart">) =>
+  longDay(r.monthStart ?? `${r.month}-01`).replace(/^1 /, "1er ");
+
 /** Chiffres de la synthèse (page, PDF et corps de l'e-mail). */
 export function reportSummary(r: WeeklyReport) {
-  // « depuis le 1er octobre 2026 »
-  const m = `1er ${monthLabel(r.month)}`;
+  // « depuis le 22 octobre 2026 » : début de la période du mois budgétaire
+  const m = sinceLabel(r);
   return {
     week: [
       ["Revenus de la semaine", fmt(r.week.income)],
@@ -100,7 +106,7 @@ export function reportSections(r: WeeklyReport): Section[] {
     rows: [
       { cells: ["Cette semaine", null], style: "group" },
       ...kv(s.week),
-      { cells: [`Depuis le 1er ${monthLabel(r.month)}`, null], style: "group" },
+      { cells: [`Depuis le ${sinceLabel(r)}`, null], style: "group" },
       ...kv(s.month),
       { cells: ["Situation actuelle", null], style: "group" },
       ...kv(s.other),

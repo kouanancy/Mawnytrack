@@ -7,6 +7,8 @@ import { reportEmail, sendEmail } from "@/lib/email";
 import { lineState, summary } from "@/lib/ledger";
 import { getPeople } from "@/lib/loans";
 import { APP_TZ, addDays, localDayTime, mondayOf } from "@/lib/month";
+import { periodOf, periodStart } from "@/lib/period";
+import { getPeriodSettings } from "@/lib/period-server";
 import { documentPdf } from "@/lib/pdf";
 import { reportFilename, reportPeriod, reportSections, reportSubject, type WeeklyReport } from "@/lib/report-model";
 
@@ -36,7 +38,9 @@ function weekBounds(weekStart: string) {
 export async function computeReport(userId: string, weekStart: string): Promise<WeeklyReport> {
   const weekEnd = addDays(weekStart, 6);
   const t = today();
-  const month = (weekEnd <= t ? weekEnd : t).slice(0, 7);
+  // « Depuis le début du mois » = depuis le début de la période (mois budgétaire) en cours à la fin de la semaine
+  const ps = await getPeriodSettings(userId);
+  const month = periodOf(weekEnd <= t ? weekEnd : t, ps);
   const { lo, hi } = weekBounds(weekStart);
 
   const [monthData, people, caisse, week] = await Promise.all([
@@ -93,6 +97,7 @@ export async function computeReport(userId: string, weekStart: string): Promise<
     weekStart,
     weekEnd,
     month,
+    monthStart: periodStart(month, ps),
     generatedAt: new Date().toISOString(),
     week: { income: n(w.income), borrow: n(w.borrow), expense: n(w.expense), refund: n(w.refund) },
     monthToDate: { income: monthData.totals.income, borrow: monthData.totals.borrow, out: mt.out, rest: mt.rest },

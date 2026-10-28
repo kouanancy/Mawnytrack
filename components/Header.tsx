@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { IcoBack, IcoCheck, IcoChev, IcoMenu } from "@/components/Icons";
-import { monthLabel, shiftMonth } from "@/lib/month";
+import { shiftMonth } from "@/lib/month";
+import { periodName, periodRange, type PeriodSettings } from "@/lib/period";
 import { SECTIONS, SETTINGS } from "@/lib/sections";
 import { useNav } from "@/lib/use-nav";
 
@@ -12,7 +13,7 @@ import { useNav } from "@/lib/use-nav";
  * En-tête : menu à trois traits (téléphone et tablette portrait), logo, sélecteur de mois, puis titre de
  * la section. Sur grand écran, le menu et le logo passent dans la barre latérale (voir globals.css).
  */
-export function Header({ current }: { current: string }) {
+export function Header({ current, ps }: { current: string; ps: PeriodSettings }) {
   const { pathname, section, month, withMonth, signOut } = useNav(current);
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -97,7 +98,10 @@ export function Header({ current }: { current: string }) {
             <Link href={withMonth(pathname, shiftMonth(month, -1))} aria-label="Mois précédent" scroll={false}>
               <IcoBack />
             </Link>
-            <b>{monthLabel(month)}</b>
+            <b>
+              {periodName(month)}
+              <small className="num">{periodRange(month, ps)}</small>
+            </b>
             <Link href={withMonth(pathname, shiftMonth(month, 1))} aria-label="Mois suivant" scroll={false}>
               <IcoChev />
             </Link>

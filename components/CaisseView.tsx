@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CaisseMonth } from "@/lib/caisse";
 import { fmt } from "@/lib/format";
+import { periodRange, type PeriodSettings } from "@/lib/period";
 
 const shortMonth = (m: string) => {
   const [y, mo] = m.split("-").map(Number);
@@ -64,9 +65,9 @@ function Chart({ rows }: { rows: CaisseMonth[] }) {
   );
 }
 
-type Props = { months: CaisseMonth[]; saved: number; invested: number; available: number };
+type Props = { months: CaisseMonth[]; saved: number; invested: number; available: number; ps: PeriodSettings };
 
-export function CaisseView({ months, saved, invested, available }: Props) {
+export function CaisseView({ months, saved, invested, available, ps }: Props) {
   const recent = [...months].reverse();
   return (
     <div className="cols">
@@ -119,6 +120,7 @@ export function CaisseView({ months, saved, invested, available }: Props) {
                 <div className="item" key={r.month}>
                   <div className="meta">
                     <b style={{ textTransform: "capitalize" }}>{longMonth(r.month)}</b>
+                    {ps.startDay !== 1 && <span>{periodRange(r.month, ps)}</span>}
                     <span className="num">
                       Revenus {fmt(r.income)} − budget {fmt(r.planned)}
                       {r.invested > 0 && ` · investi ${fmt(r.invested)}`}

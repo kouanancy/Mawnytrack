@@ -8,18 +8,27 @@ import { IcoBack } from "@/components/Icons";
 import { PdfPreview } from "@/components/PdfPreview";
 import { fmt } from "@/lib/format";
 import type { Person, StatementRow } from "@/lib/loans";
-import { monthLabel } from "@/lib/month";
+import type { PeriodSettings } from "@/lib/period";
 import { buildStatement } from "@/lib/statement";
 
-type Props = { person: Person; period: string; months: string[]; before: number; rows: StatementRow[]; today: string };
+type Props = {
+  person: Person;
+  period: string;
+  /** 12 dernières périodes du mois budgétaire : clé et libellé */
+  months: { key: string; label: string }[];
+  before: number;
+  rows: StatementRow[];
+  today: string;
+  ps: PeriodSettings;
+};
 
 const n = (v: number | null) => (v == null ? "" : fmt(v));
 
 /** Relevé d'une personne (un mois ou tout le relevé), avec aperçu avant impression ou partage. */
-export function StatementView({ person: p, period, months, before, rows, today }: Props) {
+export function StatementView({ person: p, period, months, before, rows, today, ps }: Props) {
   const router = useRouter();
   const [preview, setPreview] = useState(false);
-  const st = buildStatement({ name: p.name, direction: p.direction, period, before, rows, today });
+  const st = buildStatement({ name: p.name, direction: p.direction, period, before, rows, today, ps });
 
   return (
     <div className="statement">
@@ -38,8 +47,8 @@ export function StatementView({ person: p, period, months, before, rows, today }
           >
             <option value="tout">Tout le relevé</option>
             {months.map((mo) => (
-              <option key={mo} value={mo}>
-                {monthLabel(mo)}
+              <option key={mo.key} value={mo.key}>
+                {mo.label}
               </option>
             ))}
           </select>

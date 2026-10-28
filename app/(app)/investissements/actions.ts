@@ -3,6 +3,7 @@
 import { sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { caisseAvailableSql } from "@/lib/caisse";
+import { getPeriodSettings } from "@/lib/period-server";
 import { db } from "@/lib/db";
 import { fmt } from "@/lib/format";
 import { actionUserId } from "@/lib/session";
@@ -86,7 +87,7 @@ export async function addDisbursement(input: { projectId: string; amount: number
           where d.project_id = p.id and d.user_id = p.user_id), 0) as engaged
         from projects p where p.id = ${projectId} and p.user_id = ${userId}
       ), c as (
-        select ${caisseAvailableSql(userId)} as available
+        select ${caisseAvailableSql(userId, await getPeriodSettings(userId))} as available
       ), ins as (
         insert into project_disbursements (user_id, project_id, amount, label)
         select ${userId}, p.id, ${amount}::bigint, ${label} from p, c

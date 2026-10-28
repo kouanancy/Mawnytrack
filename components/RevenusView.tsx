@@ -4,11 +4,12 @@ import { useOptimistic, useRef, useState, useTransition } from "react";
 import { addIncome, deleteTransaction } from "@/app/(app)/actions";
 import { Journal } from "@/components/Journal";
 import { useToast } from "@/components/Toast";
+import type { PeriodSettings } from "@/lib/period";
 import type { MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount } from "@/lib/format";
 import { reduce, stamp, summary, tempId } from "@/lib/ledger";
 
-export function RevenusView({ data, month, today, tz }: { data: MonthData; month: string; today: string; tz: string }) {
+export function RevenusView({ data, month, today, tz, ps }: { data: MonthData; month: string; today: string; tz: string; ps: PeriodSettings }) {
   const [view, addOp] = useOptimistic(data, reduce);
   const [, startTransition] = useTransition();
   const toast = useToast();
@@ -21,7 +22,7 @@ export function RevenusView({ data, month, today, tz }: { data: MonthData; month
     ev.preventDefault();
     const amt = parseAmount(amount);
     if (!amt) return toast("Saisissez un montant");
-    const { day, time } = stamp(month, tz);
+    const { day, time } = stamp(month, tz, ps);
     const sent = { month, amount: amt, label };
     setAmount("");
     setLabel("");

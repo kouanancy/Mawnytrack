@@ -3,6 +3,7 @@
 import type { Direction } from "@/lib/data";
 import type { StatementRow } from "@/lib/loans";
 import { monthLabel } from "@/lib/month";
+import { DEFAULT_PERIOD, periodEnd, periodStart, periodTitle, type PeriodSettings } from "@/lib/period";
 
 export type SRow =
   | { kind: "carry"; date: string; label: string; balance: number }
@@ -14,8 +15,11 @@ export type SRow =
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const longDate = (day: string) => {
+  // « 1er novembre 2026 »
   const [y, m, d] = day.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  return new Date(Date.UTC(y, m - 1, d))
+    .toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
+    .replace(/^1 /, "1er ");
 };
 const shortDate = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 
@@ -35,8 +39,11 @@ export function buildStatement(input: {
   before: number;
   rows: StatementRow[];
   today: string;
+  /** Mois budgétaire : un mois du relevé est une période (défaut : mois du calendrier) */
+  ps?: PeriodSettings;
 }) {
   const { name, period, before, rows, today } = input;
+  const ps = input.ps ?? DEFAULT_PERIOD;
   const L = input.direction === "lent";
   const all = period === "tout";
   const kind = L ? "de prêts" : "d'emprunts";
@@ -71,13 +78,18 @@ export function buildStatement(input: {
     out.push({ kind: "end", label: `Reste dû au ${longDate(today)}`, balance: rows.at(-1)?.balance ?? 0 });
     periodLabel = rows.length ? `du ${longDate(rows[0].day)} au ${longDate(today)}` : `au ${longDate(today)}`;
   } else {
-    const [y, m] = period.split("-").map(Number);
-    const lastDay = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-    out.push({ kind: "carry", date: `01/${String(m).padStart(2, "0")}`, label: "Reste dû au début du mois", balance: before });
+    const first = periodStart(period, ps), last = periodEnd(period, ps);
+    const calendar = ps.startDay === 1;
+    out.push({
+      kind: "carry",
+      date: shortDate(first),
+      label: calendar ? "Reste dû au début du mois" : "Reste dû au début de la période",
+      balance: before,
+    });
     out.push(...rows.map(move));
-    out.push({ kind: "total", label: "Total du mois", loan: tl, pay: tp });
-    out.push({ kind: "end", label: `Reste dû au ${longDate(lastDay)}`, balance: rows.at(-1)?.balance ?? before });
-    periodLabel = cap(monthLabel(period));
+    out.push({ kind: "total", label: calendar ? "Total du mois" : "Total de la période", loan: tl, pay: tp });
+    out.push({ kind: "end", label: `Reste dû au ${longDate(last)}`, balance: rows.at(-1)?.balance ?? before });
+    periodLabel = cap(periodTitle(period, ps));
   }
 
   return {

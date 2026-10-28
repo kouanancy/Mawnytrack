@@ -3,6 +3,7 @@
 import type { Entry, Line, MonthData, Totals } from "@/lib/data";
 import { fmt } from "@/lib/format";
 import { localDayTime } from "@/lib/month";
+import { dayInPeriod, type PeriodSettings } from "@/lib/period";
 
 export type LineStatus = "free" | "over" | "empty" | "low" | "ok";
 
@@ -79,11 +80,12 @@ export function reduce(data: MonthData, op: Op): MonthData {
   }
 }
 
-/** Horodatage local d'une saisie : maintenant pour le mois en cours, sinon le 1er du mois affiché. */
-export function stamp(month: string, tz: string) {
-  const now = new Date();
-  const local = localDayTime(now, tz);
-  return local.day.startsWith(month) ? local : { day: `${month}-01`, time: local.time };
+/**
+ * Horodatage local d'une saisie (même règle que le serveur) : maintenant pour la période en cours,
+ * sinon le premier jour de la période affichée.
+ */
+export function stamp(month: string, tz: string, ps: PeriodSettings) {
+  return { day: dayInPeriod(month, ps, tz), time: localDayTime(new Date(), tz).time };
 }
 
 export const tempId = () => `tmp-${Math.random().toString(36).slice(2, 10)}`;

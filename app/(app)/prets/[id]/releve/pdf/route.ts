@@ -2,7 +2,9 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { fmt } from "@/lib/format";
 import { getStatement } from "@/lib/loans";
-import { APP_TZ, currentMonth, isValidMonth, localDayTime } from "@/lib/month";
+import { APP_TZ, isValidMonth, localDayTime } from "@/lib/month";
+import { currentPeriod } from "@/lib/period";
+import { getPeriodSettings } from "@/lib/period-server";
 import { pdfResponse, tablePdf, type TableRow } from "@/lib/pdf";
 import { buildStatement } from "@/lib/statement";
 
@@ -15,7 +17,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params;
   if (!UUID_RE.test(id)) return new Response("Introuvable", { status: 404 });
   const m = new URL(req.url).searchParams.get("m");
-  const period = m === "tout" ? "tout" : isValidMonth(m) ? m : currentMonth();
+  const period = m === "tout" ? "tout" : isValidMonth(m) ? m : currentPeriod(await getPeriodSettings(session.user.id));
   const data = await getStatement(session.user.id, id, period);
   if (!data) return new Response("Introuvable", { status: 404 });
 
@@ -26,6 +28,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     before: data.before,
     rows: data.rows,
     today: localDayTime(new Date(), APP_TZ).day,
+    ps: data.period,
   });
   const n = (v: number | null) => (v == null ? "" : fmt(v));
   const rows: TableRow[] = st.rows.map((r) => {

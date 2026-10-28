@@ -3,7 +3,9 @@ import { auth } from "@/lib/auth";
 import { getMonthData } from "@/lib/data";
 import { fmt } from "@/lib/format";
 import { category } from "@/lib/ledger";
-import { currentMonth, isValidMonth, monthLabel } from "@/lib/month";
+import { monthLabel } from "@/lib/month";
+import { parsePeriod, periodTitle } from "@/lib/period";
+import { getPeriodSettings } from "@/lib/period-server";
 import { pdfResponse, tablePdf } from "@/lib/pdf";
 import { sortiesFilename } from "@/lib/statement";
 
@@ -13,7 +15,8 @@ export async function GET(req: Request) {
   if (!session) return new Response("Session expirée. Reconnectez-vous.", { status: 401 });
   const q = new URL(req.url).searchParams;
   const m = q.get("m");
-  const month = isValidMonth(m) ? m : currentMonth();
+  const ps = await getPeriodSettings(session.user.id);
+  const month = parsePeriod(m ?? undefined, ps);
   const lineId = q.get("ligne");
 
   const data = await getMonthData(session.user.id, month, ["expense", "refund"]);
@@ -23,7 +26,7 @@ export async function GET(req: Request) {
   const cur = line?.label ?? "Toutes les catégories";
 
   const bytes = await tablePdf({
-    title: `Sorties de ${monthLabel(month)} · ${cur}`,
+    title: `Sorties de ${periodTitle(month, ps)} · ${cur}`,
     columns: [
       { label: "Date", width: 16 },
       { label: "Libellé", width: 38 },
