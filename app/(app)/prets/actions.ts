@@ -4,7 +4,10 @@ import { sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { fmt } from "@/lib/format";
+import { checkMove } from "@/lib/ledger";
 import { APP_TZ, localDayTime } from "@/lib/month";
+import { currentPeriod, periodTitle } from "@/lib/period";
+import { getPeriodSettings, periodKeySql } from "@/lib/period-server";
 import { actionUserId } from "@/lib/session";
 
 // Actions du volet Prêts. Tout est écrit dans transactions (aucune donnée en double) ; les personnes
@@ -165,4 +168,113 @@ export async function addRefund(input: { personId: string; amount: number; date?
   if (Number(r.inserted) > 0) return done(personId);
   const due = Math.max(0, Number(r.due));
   return fail(due <= 0 ? `Aucune somme due par ${r.name}.` : `Montant supérieur au reste dû par ${r.name} (${fmt(due)} FCFA).`);
+}
+
+/**
+ * Modifie un mouvement lié à une personne (montant, libellé, date) : prêt accordé, remboursement reçu,
+ * emprunt reçu ou remboursement d'emprunt. La transaction elle-même est modifiée (source unique de vérité).
+ * Contrôles, dans une transaction SQL sous verrou (ligne puis personne, FOR UPDATE), avec les mêmes règles que
+ * l'interface (checkMove) ; une modification qui n'aggrave pas la situation reste possible :
+ * - remboursements jamais supérieurs aux prêts ou emprunts de la personne ;
+ * - personne 'lent' : accordé (prêts − remboursements) jamais au-dessus du budget prévu de sa ligne ;
+ * - remboursement d'emprunt : jamais au-dessus du budget de la ligne pour la période de la nouvelle date.
+ */
+export async function updateMove(input: { id: string; amount: number; label: string; date: string }): Promise<LoanResult> {
+  const userId = await actionUserId();
+  const { id, amount, date } = input;
+  if (typeof id !== "string" || !UUID_RE.test(id)) return fail("Opération introuvable.");
+  if (!isAmount(amount)) return fail("Saisissez un montant.");
+  if (typeof date !== "string" || !DATE_RE.test(date) || Number.isNaN(Date.parse(date))) return fail("Date invalide.");
+  const label = clean(input.label, 120);
+  const today = localDayTime(new Date(), APP_TZ).day;
+  const ps = await getPeriodSettings(userId);
+  // monthly_budgets.month = 1er jour du mois de la clé de période
+  const curStart = `${currentPeriod(ps)}-01`;
+  const net = sql`case x.kind when 'expense' then x.amount when 'refund' then -x.amount else 0 end`;
+
+  const [, , res] = await db.batch([
+    db.execute(sql`
+      select id from budget_lines
+      where user_id = ${userId} and id = (select line_id from transactions where id = ${id} and user_id = ${userId})
+      for update`),
+    db.execute(sql`
+      select id from people
+      where user_id = ${userId} and id = (select person_id from transactions where id = ${id} and user_id = ${userId})
+      for update`),
+    db.execute(sql`
+      with t as (
+        select t.id, t.kind, t.amount, t.line_id, t.person_id, t.occurred_at, p.direction, p.name,
+          (p.direction = 'lent' and t.kind = 'expense') or (p.direction = 'borrowed' and t.kind = 'borrow') as is_loan,
+          to_char(t.occurred_at at time zone ${APP_TZ}, 'YYYY-MM-DD') as old_day
+        from transactions t join people p on p.id = t.person_id and p.user_id = t.user_id
+        where t.id = ${id} and t.user_id = ${userId}
+          and ((p.direction = 'lent' and t.kind in ('expense', 'refund'))
+            or (p.direction = 'borrowed' and t.kind in ('borrow', 'expense')))
+      ), nw as (
+        -- Nouvelle date, même heure locale qu'avant
+        select ((${date})::date + (t.occurred_at at time zone ${APP_TZ})::time) at time zone ${APP_TZ} as at from t
+      ), agg as (
+        select
+          coalesce(sum(x.amount) filter (where (t.direction = 'lent' and x.kind = 'expense') or (t.direction = 'borrowed' and x.kind = 'borrow')), 0) as loans,
+          coalesce(sum(x.amount) filter (where (t.direction = 'lent' and x.kind = 'refund') or (t.direction = 'borrowed' and x.kind = 'expense')), 0) as pays
+        from t join transactions x on x.user_id = ${userId} and x.person_id = t.person_id
+      ), pk as (
+        select ${periodKeySql(sql`nw.at`, ps)} as m, ${periodKeySql(sql`t.occurred_at`, ps)} as old_m from t, nw
+      ), c as (
+        select
+          t.*, agg.loans, agg.pays, pk.m, pk.old_m,
+          agg.loans + case when t.is_loan then ${amount}::bigint - t.amount else 0 end as new_loans,
+          agg.pays + case when t.is_loan then 0 else ${amount}::bigint - t.amount end as new_pays,
+          -- Personne 'lent' : budget prévu de la ligne (période en cours)
+          coalesce(
+            (select mb.planned from monthly_budgets mb where mb.line_id = t.line_id and mb.month = (${curStart})::date),
+            (select bl.planned from budget_lines bl where bl.id = t.line_id and bl.user_id = ${userId}), 0) as planned,
+          -- Remboursement d'emprunt : budget et dépensé de la ligne sur la période de la nouvelle date
+          coalesce(
+            (select mb.planned from monthly_budgets mb where mb.line_id = t.line_id and mb.month = pk.m),
+            (select bl.planned from budget_lines bl where bl.id = t.line_id and bl.user_id = ${userId}), 0) as p_planned,
+          (select coalesce(sum(${net}), 0) from transactions x
+            where x.user_id = ${userId} and x.line_id = t.line_id and x.id <> t.id
+              and ${periodKeySql(sql`x.occurred_at`, ps)} = pk.m) as p_spent
+        from t, agg, pk
+      ), up as (
+        update transactions tr set amount = ${amount}::bigint, occurred_at = nw.at,
+          label = coalesce(nullif(${label}, ''), case
+            when c.direction = 'lent' and c.kind = 'expense' then 'Prêt'
+            when c.direction = 'lent' then 'Remboursement de ' || c.name
+            when c.kind = 'borrow' then 'Emprunt'
+            else 'Remboursement à ' || c.name end)
+        from c, nw
+        where tr.id = c.id and tr.user_id = ${userId}
+          and ((${date})::date <= (${today})::date or ${date} = c.old_day)
+          and (c.new_pays <= c.new_loans or c.new_pays - c.new_loans <= c.pays - c.loans)
+          and (c.direction <> 'lent' or c.planned = 0 or c.new_loans - c.new_pays <= c.planned
+            or c.new_loans - c.new_pays <= c.loans - c.pays)
+          and (c.direction <> 'borrowed' or c.kind <> 'expense' or c.p_planned = 0
+            or c.p_spent + ${amount}::bigint <= c.p_planned or (c.m = c.old_m and ${amount}::bigint <= c.amount))
+        returning tr.id
+      )
+      select c.person_id, c.direction, c.name, c.is_loan, c.amount, c.loans, c.pays, c.planned, c.p_planned, c.p_spent,
+        c.old_day, to_char(c.m, 'YYYY-MM') as m, c.m = c.old_m as same, (select count(*) from up) as updated
+      from c`),
+  ]);
+
+  const r = rowsOf(res)[0];
+  if (!r) return fail("Opération introuvable.");
+  if (Number(r.updated) > 0) return done(String(r.person_id));
+  if (date > today && date !== r.old_day) return fail("La date ne peut pas être dans le futur.");
+  const check = checkMove(
+    {
+      direction: r.direction as "lent" | "borrowed",
+      name: String(r.name),
+      isLoan: r.is_loan === true,
+      old: Number(r.amount),
+      loans: Number(r.loans),
+      pays: Number(r.pays),
+      planned: Number(r.planned),
+      period: { planned: Number(r.p_planned), spent: Number(r.p_spent), same: r.same === true, title: periodTitle(String(r.m), ps) },
+    },
+    amount,
+  );
+  return fail(check.ok ? "Modification impossible. Réessayez." : check.hint);
 }

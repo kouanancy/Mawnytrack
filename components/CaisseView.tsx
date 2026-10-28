@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { CaisseMonth } from "@/lib/caisse";
-import { fmt } from "@/lib/format";
-import { periodRange, type PeriodSettings } from "@/lib/period";
+import { fmt, fmtNb } from "@/lib/format";
+import { periodEndLabel, periodRange, type PeriodSettings } from "@/lib/period";
 
 const shortMonth = (m: string) => {
   const [y, mo] = m.split("-").map(Number);
@@ -65,9 +65,16 @@ function Chart({ rows }: { rows: CaisseMonth[] }) {
   );
 }
 
-type Props = { months: CaisseMonth[]; saved: number; invested: number; available: number; ps: PeriodSettings };
+type Props = { months: CaisseMonth[]; saved: number; unspent: number; invested: number; available: number; ps: PeriodSettings };
 
-export function CaisseView({ months, saved, invested, available, ps }: Props) {
+/** « Épargne prévue 50 000 + non dépensé 20 000 » (période terminée) ou « … · non dépensé ajouté le 21 novembre 2026 ». */
+function savingDetail(r: CaisseMonth, ps: PeriodSettings) {
+  if (!r.closed) return `Épargne prévue ${fmtNb(r.planSaving)} · non dépensé ajouté le ${periodEndLabel(r.month, ps)}`;
+  if (r.unspent < 0) return `Épargne prévue ${fmtNb(r.planSaving)} − dépenses hors budget ${fmtNb(-r.unspent)}`;
+  return `Épargne prévue ${fmtNb(r.planSaving)} + non dépensé ${fmtNb(r.unspent)}`;
+}
+
+export function CaisseView({ months, saved, unspent, invested, available, ps }: Props) {
   const recent = [...months].reverse();
   return (
     <div className="cols">
@@ -79,6 +86,12 @@ export function CaisseView({ months, saved, invested, available, ps }: Props) {
             <small>FCFA</small>
           </div>
           <div className="pct">Épargnes supplémentaires cumulées, moins les sorties vers les investissements</div>
+          {unspent !== 0 && (
+            <div className="pct num">
+              dont non dépensé : {unspent < 0 ? "−" : ""}
+              {fmt(Math.abs(unspent))} FCFA
+            </div>
+          )}
           <div className="split">
             <div>
               <span>Total épargné</span>
@@ -121,14 +134,17 @@ export function CaisseView({ months, saved, invested, available, ps }: Props) {
                   <div className="meta">
                     <b style={{ textTransform: "capitalize" }}>{longMonth(r.month)}</b>
                     {ps.startDay !== 1 && <span>{periodRange(r.month, ps)}</span>}
+                    <span className="num">{savingDetail(r, ps)}</span>
                     <span className="num">
-                      Revenus {fmt(r.income)} − budget {fmt(r.planned)}
+                      Revenus {fmt(r.income)} · budget {fmt(r.planned)} · dépensé {fmt(r.out)}
                       {r.invested > 0 && ` · investi ${fmt(r.invested)}`}
                     </span>
                   </div>
                   <div className="pr">
                     <span className="amt num i">+{fmt(r.saving)}</span>
-                    <span className="num caisse-cum">Caisse {fmt(r.cum)}</span>
+                    <span className="num caisse-cum">
+                      {r.closed ? "Caisse fin de mois" : "Caisse à ce jour"} {fmt(r.cum)}
+                    </span>
                   </div>
                 </div>
               ))}

@@ -4,6 +4,9 @@ export function fmt(n: number): string {
   return n < 0 ? `−${s}` : s;
 }
 
+/** Montant insécable (espaces insécables) pour les phrases qui passent à la ligne : 1 250 000 */
+export const fmtNb = (n: number) => fmt(n).replace(/ /g, "\u00a0");
+
 /** Lecture d'un montant saisi (« 12 500 » → 12500). */
 export function parseAmount(v: string | null | undefined): number {
   const n = parseInt(String(v ?? "").replace(/\D/g, ""), 10);

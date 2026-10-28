@@ -551,3 +551,15 @@ input[type="date"]::-webkit-datetime-edit{padding:0;line-height:42px}
 .month b{display:flex;flex-direction:column;align-items:center;line-height:1.15;padding:2px 0}
 .month b small{font-size:11px;font-weight:500;color:var(--muted);text-transform:none}
 .set-preview{margin:0;background:var(--surface-2);border-radius:10px;padding:10px 12px;font-size:14px}
+
+/* Mouvements de prêts et d'emprunts modifiables (journaux et fiche) */
+.item-hit{flex:1;min-width:0;display:flex;align-items:center;gap:12px;background:none;border:0;padding:0;margin:0;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:8px}
+.item-hit:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.item-hit .meta b{color:var(--ink)}
+.item.editing{display:block;background:var(--surface-2)}
+.move-edit{display:flex;flex-direction:column;gap:10px}
+.move-edit > b{font-weight:600}
+.move-edit .row .field{flex:1 1 140px}
+.move-edit > .field{flex:none}
+.move-edit .field input{background:var(--surface)}
+.move-edit .hint{margin:0}

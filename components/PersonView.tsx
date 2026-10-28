@@ -2,21 +2,34 @@
 
 import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
-import { addBorrow, addRefund } from "@/app/(app)/prets/actions";
+import { useState } from "react";
+import { addBorrow, addRefund, updateMove } from "@/app/(app)/prets/actions";
 import { IcoBack, IcoPrint } from "@/components/Icons";
+import { MoveEditForm, type MoveEdit } from "@/components/MoveEditForm";
 import { useToast } from "@/components/Toast";
 import { fmt, formatInput, parseAmount } from "@/lib/format";
-import { tempId } from "@/lib/ledger";
+import { tempId, type MoveCtx } from "@/lib/ledger";
 import type { Movement, Person } from "@/lib/loans";
 import { localDayTime } from "@/lib/month";
 
 type State = { person: Person; history: Movement[] };
 
-function reduce(s: State, m: Movement): State {
-  const p = s.person;
-  const total = p.total + (m.type === "loan" ? m.amount : 0);
-  const back = p.back + (m.type === "pay" ? m.amount : 0);
-  return { person: { ...p, total, back, due: Math.max(0, total - back) }, history: [m, ...s.history] };
+type Op = { type: "add"; move: Movement } | { type: "edit"; move: Movement };
+
+function totals(p: Person, m: Movement, sign: 1 | -1): Person {
+  const total = p.total + (m.type === "loan" ? sign * m.amount : 0);
+  const back = p.back + (m.type === "pay" ? sign * m.amount : 0);
+  return { ...p, total, back, due: Math.max(0, total - back) };
+}
+
+function reduce(s: State, op: Op): State {
+  if (op.type === "add") return { person: totals(s.person, op.move, 1), history: [op.move, ...s.history] };
+  const old = s.history.find((h) => h.id === op.move.id);
+  if (!old) return s;
+  return {
+    person: totals(totals(s.person, old, -1), op.move, 1),
+    history: s.history.map((h) => (h.id === op.move.id ? op.move : h)),
+  };
 }
 
 const dfmt = (day: string) => {
@@ -32,6 +45,27 @@ export function PersonView({ data, today, tz }: { data: State; today: string; tz
   const { person: p, history } = view;
   const L = p.direction === "lent";
   const back = L ? "/prets" : "/prets?sens=emprunte";
+  const [editing, setEditing] = useState<string | null>(null);
+
+  /** Contexte de contrôle d'un mouvement ; le budget de période d'un remboursement d'emprunt est contrôlé par le serveur. */
+  const ctx = (h: Movement): MoveCtx => ({
+    direction: p.direction,
+    name: p.name,
+    isLoan: h.type === "loan",
+    old: h.amount,
+    loans: p.total,
+    pays: p.back,
+    planned: L ? p.planned : 0,
+    period: null,
+  });
+
+  function onEdit(h: Movement, v: MoveEdit) {
+    startTransition(async () => {
+      apply({ type: "edit", move: { ...h, amount: v.amount, label: v.label || h.label, day: v.date } });
+      const r = await updateMove({ id: h.id, ...v });
+      toast(r.ok ? "Modification enregistrée" : r.error);
+    });
+  }
 
   function movement(type: Movement["type"], amount: number, label: string, day: string): Movement {
     return { id: tempId(), type, amount, label, day, time: localDayTime(new Date(), tz).time };
@@ -46,7 +80,7 @@ export function PersonView({ data, today, tz }: { data: State; today: string; tz
     const label = String(f.get("label") ?? "").trim() || "Emprunt";
     form.reset();
     startTransition(async () => {
-      apply(movement("loan", amount, label, today));
+      apply({ type: "add", move: movement("loan", amount, label, today) });
       const r = await addBorrow({ personId: p.id, amount, label });
       toast(r.ok ? `${fmt(amount)} FCFA empruntés à ${p.name}` : r.error);
     });
@@ -62,7 +96,7 @@ export function PersonView({ data, today, tz }: { data: State; today: string; tz
     const date = String(f.get("date") ?? "") || today;
     form.reset();
     startTransition(async () => {
-      apply(movement("pay", amount, `Remboursement de ${p.name}`, date));
+      apply({ type: "add", move: movement("pay", amount, `Remboursement de ${p.name}`, date) });
       const r = await addRefund({ personId: p.id, amount, date });
       toast(r.ok ? (p.due - amount <= 0 ? "Prêt soldé" : "Remboursement enregistré") : r.error);
     });
@@ -183,24 +217,52 @@ export function PersonView({ data, today, tz }: { data: State; today: string; tz
         <div className="col">
           <div className="sect">
             <h2>Historique</h2>
-            <span>Du plus récent au plus ancien</span>
+            <span>Du plus récent au plus ancien · touchez une ligne pour la modifier</span>
           </div>
           <div className="list">
             {sorted.length ? (
-              sorted.map((h) => (
-                <div className={`item${h.id.startsWith("tmp-") ? " fresh" : ""}`} key={h.id}>
-                  <div className={`ico ${h.type === "loan" ? "o" : "i"}`} aria-hidden="true">
-                    {h.type === "loan" ? (L ? "↗" : "↙") : "✓"}
+              sorted.map((h) => {
+                const kind = h.type === "loan" ? (L ? "Prêt" : "Emprunt") : "Remboursement";
+                if (editing === h.id)
+                  return (
+                    <div className="item editing" key={h.id}>
+                      <MoveEditForm
+                        title={kind}
+                        initial={{ amount: h.amount, label: h.label, date: h.day }}
+                        today={today}
+                        ctx={() => ctx(h)}
+                        onCancel={() => setEditing(null)}
+                        onSave={(v) => {
+                          setEditing(null);
+                          onEdit(h, v);
+                        }}
+                      />
+                    </div>
+                  );
+                const temp = h.id.startsWith("tmp-");
+                return (
+                  <div className={`item${temp ? " fresh" : ""}`} key={h.id}>
+                    <button
+                      type="button"
+                      className="item-hit"
+                      disabled={temp}
+                      aria-label={`Modifier ${h.label || kind}, ${fmt(h.amount)} FCFA`}
+                      onClick={() => setEditing(h.id)}
+                    >
+                      <span className={`ico ${h.type === "loan" ? "o" : "i"}`} aria-hidden="true">
+                        {h.type === "loan" ? (L ? "↗" : "↙") : "✓"}
+                      </span>
+                      <span className="meta">
+                        <b>{h.label || kind}</b>
+                        <span>
+                          {dfmt(h.day)} · {h.time} · {kind}
+                        </span>
+                      </span>
+                      <span className={`amt num${h.type === "pay" ? " i" : ""}`}>{fmt(h.amount)}</span>
+                    </button>
                   </div>
-                  <div className="meta">
-                    <b>{h.label || (h.type === "loan" ? (L ? "Prêt" : "Emprunt") : "Remboursement")}</b>
-                    <span>
-                      {dfmt(h.day)} · {h.time} · {h.type === "loan" ? (L ? "Prêt" : "Emprunt") : "Remboursement"}
-                    </span>
-                  </div>
-                  <div className={`amt num${h.type === "pay" ? " i" : ""}`}>{fmt(h.amount)}</div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="empty">Aucun mouvement.</div>
             )}

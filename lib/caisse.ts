@@ -5,16 +5,29 @@ import { APP_TZ } from "@/lib/month";
 import type { PeriodSettings } from "@/lib/period";
 import { getPeriodSettings, periodKeySql } from "@/lib/period-server";
 
-// Caisse : épargne supplémentaire de chaque mois = revenus `income` du mois (jamais les emprunts)
-// − budget prévu total du mois (valeur figée de monthly_budgets, sinon budget_lines.planned), minimum 0.
-// Disponible en caisse = somme des épargnes, du premier mois ayant un revenu au mois en cours,
-// − toutes les sorties vers les investissements (project_disbursements).
+// Caisse, par période (mois budgétaire), revenus `income` seuls (jamais les emprunts) :
+// - épargne prévue = revenus − budget prévu total (valeur figée de monthly_budgets, sinon budget_lines.planned), minimum 0 ;
+// - période terminée : épargne = revenus − dépenses nettes réelles (expense − refund), minimum 0,
+//   soit l'épargne prévue + le non dépensé ;
+// - période en cours : épargne = épargne prévue ; le non dépensé n'est ajouté qu'à la clôture.
+// Disponible en caisse = somme des épargnes, de la première période ayant un revenu à la période en cours,
+// − toutes les sorties vers les investissements (project_disbursements). Tout est recalculé à chaque lecture :
+// modifier ou supprimer une transaction d'une période terminée met à jour son épargne et la caisse.
 
 export type CaisseMonth = {
   month: string;
   income: number;
   planned: number;
+  /** Dépenses nettes réelles de la période (expense − refund) */
+  out: number;
+  /** Épargne prévue : revenus − budget prévu, minimum 0 */
+  planSaving: number;
+  /** Non dépensé ajouté à la clôture (0 pour la période en cours) ; négatif si des dépenses sans plafond l'emportent */
+  unspent: number;
+  /** Épargne de la période = épargne prévue + non dépensé */
   saving: number;
+  /** Période terminée (le non dépensé est acquis) */
+  closed: boolean;
   invested: number;
   /** Caisse cumulée à la fin du mois */
   cum: number;
@@ -49,8 +62,10 @@ const monthsCte = (userId: string, ps: PeriodSettings) => sql`
 const savingsCtes = (userId: string, ps: PeriodSettings) => sql`
   ${monthsCte(userId, ps)},
   inc as (
-    select ${periodKeySql(sql`occurred_at`, ps)} as m, sum(amount) as s
-    from transactions where user_id = ${userId} and kind = 'income' group by 1
+    select ${periodKeySql(sql`occurred_at`, ps)} as m,
+      coalesce(sum(amount) filter (where kind = 'income'), 0) as s,
+      coalesce(sum(case kind when 'expense' then amount when 'refund' then -amount else 0 end), 0) as o
+    from transactions where user_id = ${userId} and kind in ('income', 'expense', 'refund') group by 1
   ), pl as (
     select months.m, sum(coalesce(mb.planned, bl.planned)) as p
     from months
@@ -58,10 +73,15 @@ const savingsCtes = (userId: string, ps: PeriodSettings) => sql`
     left join monthly_budgets mb on mb.line_id = bl.id and mb.month = months.m
     where bl.user_id = ${userId}
     group by months.m
-  ), sv as (
-    select months.m, coalesce(inc.s, 0) as income, coalesce(pl.p, 0) as planned,
-      greatest(coalesce(inc.s, 0) - coalesce(pl.p, 0), 0) as saving
+  ), sb as (
+    select months.m, coalesce(inc.s, 0) as income, coalesce(pl.p, 0) as planned, coalesce(inc.o, 0) as net_out,
+      greatest(coalesce(inc.s, 0) - coalesce(pl.p, 0), 0) as plan_saving,
+      months.m < ${periodKeySql(sql`now()`, ps)} as closed
     from months left join inc on inc.m = months.m left join pl on pl.m = months.m
+  ), sv as (
+    -- Période terminée : épargne réelle (revenus − dépenses nettes) ; période en cours : épargne prévue
+    select sb.*, case when closed then greatest(income - net_out, 0) else plan_saving end as saving
+    from sb
   )`;
 
 /** Disponible en caisse, en une expression SQL scalaire (réutilisée par le contrôle des sorties). */
@@ -93,7 +113,7 @@ export async function getCaisse(userId: string) {
         select ${periodKeySql(sql`occurred_at`, ps)} as m, sum(amount) as s
         from project_disbursements where user_id = ${userId} group by 1
       )
-      select to_char(sv.m, 'YYYY-MM') as month, sv.income, sv.planned, sv.saving,
+      select to_char(sv.m, 'YYYY-MM') as month, sv.income, sv.planned, sv.net_out, sv.plan_saving, sv.saving, sv.closed,
         coalesce(outm.s, 0) as invested,
         sum(sv.saving - coalesce(outm.s, 0)) over (order by sv.m) as cum
       from sv left join outm on outm.m = sv.m
@@ -105,13 +125,18 @@ export async function getCaisse(userId: string) {
     month: String(r.month),
     income: n(r.income),
     planned: n(r.planned),
+    out: n(r.net_out),
+    planSaving: n(r.plan_saving),
+    unspent: n(r.saving) - n(r.plan_saving),
     saving: n(r.saving),
+    closed: r.closed === true,
     invested: n(r.invested),
     cum: n(r.cum),
   }));
   const saved = months.reduce((a, m) => a + m.saving, 0);
+  const unspent = months.reduce((a, m) => a + m.unspent, 0);
   const invested = n(tot.rows[0]?.invested);
-  return { months, saved, invested, available: saved - invested, ps };
+  return { months, saved, unspent, invested, available: saved - invested, ps };
 }
 
 const projectCols = sql`p.id, p.name, p.kind, p.target, coalesce(sum(d.amount), 0) as engaged`;
