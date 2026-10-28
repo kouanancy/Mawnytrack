@@ -1,7 +1,8 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { monthBounds, type Direction } from "@/lib/data";
+import { type Direction } from "@/lib/data";
+import { getPeriodSettings, periodBounds } from "@/lib/period-server";
 import { APP_TZ } from "@/lib/month";
 
 // Volet Prêts : tout est dérivé de la table transactions (aucune donnée en double).
@@ -102,7 +103,9 @@ export type StatementRow = Movement & { /** Reste dû après ce mouvement */ bal
  */
 export async function getStatement(userId: string, personId: string, period: string) {
   const all = period === "tout";
-  const bounds = all ? null : monthBounds(period);
+  const ps = await getPeriodSettings(userId);
+  // Un mois du relevé = une période du mois budgétaire
+  const bounds = all ? null : periodBounds(period, ps);
   const [people, before, rows] = (await db.batch([
     peopleQuery(userId, personId),
     db.execute(sql`
@@ -122,6 +125,7 @@ export async function getStatement(userId: string, personId: string, period: str
   const person = people.rows[0];
   if (!person) return null;
   return {
+    period: ps,
     person: toPerson(person),
     before: Math.max(0, n(before.rows[0]?.before)),
     rows: rows.rows.map((r): StatementRow => ({ ...toMovement(r), balance: Math.max(0, n(r.balance)) })),

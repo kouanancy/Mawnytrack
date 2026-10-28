@@ -1,7 +1,9 @@
 import "server-only";
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { APP_TZ, currentMonth } from "@/lib/month";
+import { APP_TZ } from "@/lib/month";
+import { currentPeriod, type PeriodSettings } from "@/lib/period";
+import { getPeriodSettings, periodBounds } from "@/lib/period-server";
 
 // Toutes les lectures d'un écran partent en un seul lot (db.batch = un aller-retour HTTP,
 // une transaction), avec les agrégats calculés en SQL. Chaque requête filtre sur user_id.
@@ -51,17 +53,7 @@ export type MonthData = {
 
 const n = (v: unknown) => (v == null ? 0 : Number(v));
 
-/** Bornes [lo, hi[ du mois dans le fuseau de l'application. */
-export function monthBounds(month: string) {
-  const start = `${month}-01`;
-  return {
-    start,
-    lo: sql`((${start})::date)::timestamp at time zone ${APP_TZ}`,
-    hi: sql`(((${start})::date) + interval '1 month')::timestamp at time zone ${APP_TZ}`,
-  };
-}
-
-/** Fige les budgets d'un mois terminé (idempotent : seules les lignes non encore figées sont ajoutées). */
+/** Fige les budgets d'une période terminée (idempotent : seules les lignes non encore figées sont ajoutées). */
 function freezeMonth(userId: string, start: string) {
   return db.execute(sql`
     insert into monthly_budgets (user_id, line_id, month, planned)
@@ -69,8 +61,8 @@ function freezeMonth(userId: string, start: string) {
     on conflict (line_id, month) do nothing`);
 }
 
-function linesQuery(userId: string, month: string) {
-  const { start, lo, hi } = monthBounds(month);
+function linesQuery(userId: string, month: string, ps: PeriodSettings) {
+  const { start, lo, hi } = periodBounds(month, ps);
   return db.execute(sql`
     with s as (
       select line_id,
@@ -119,8 +111,8 @@ function linesQuery(userId: string, month: string) {
     order by bl.position, bl.created_at`);
 }
 
-function totalsQuery(userId: string, month: string) {
-  const { lo, hi } = monthBounds(month);
+function totalsQuery(userId: string, month: string, ps: PeriodSettings) {
+  const { lo, hi } = periodBounds(month, ps);
   return db.execute(sql`
     select
       coalesce(sum(amount) filter (where kind = 'income'), 0) as income,
@@ -131,8 +123,8 @@ function totalsQuery(userId: string, month: string) {
     where user_id = ${userId} and occurred_at >= ${lo} and occurred_at < ${hi}`);
 }
 
-function entriesQuery(userId: string, month: string, kinds: Kind[]) {
-  const { lo, hi } = monthBounds(month);
+function entriesQuery(userId: string, month: string, kinds: Kind[], ps: PeriodSettings) {
+  const { lo, hi } = periodBounds(month, ps);
   const kindList: SQL = sql.join(kinds.map((k) => sql`${k}`), sql`, `);
   return db.execute(sql`
     select t.id, t.kind, t.amount, t.label, t.line_id, bl.label as line_label, p.direction, p.name as person_name,
@@ -190,16 +182,17 @@ function toEntry(r: Record<string, unknown>): Entry {
 }
 
 /**
- * Données d'un mois pour un écran. journal : types de transactions listés (aucun pour le Budget).
- * Un mois terminé est figé dans monthly_budgets dans le même lot, avant les lectures.
+ * Données d'un mois budgétaire (période, voir lib/period.ts) pour un écran. journal : types de transactions
+ * listés (aucun pour le Budget). Une période terminée est figée dans monthly_budgets dans le même lot.
  */
 export async function getMonthData(userId: string, month: string, journal: Kind[]): Promise<MonthData> {
-  const past = month < currentMonth();
+  const ps = await getPeriodSettings(userId);
+  const past = month < currentPeriod(ps);
   const reads = [
-    linesQuery(userId, month),
-    totalsQuery(userId, month),
+    linesQuery(userId, month, ps),
+    totalsQuery(userId, month, ps),
     debtsQuery(userId),
-    ...(journal.length ? [entriesQuery(userId, month, journal)] : []),
+    ...(journal.length ? [entriesQuery(userId, month, journal, ps)] : []),
   ] as const;
   const results = (past
     ? await db.batch([freezeMonth(userId, `${month}-01`), ...reads])

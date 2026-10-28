@@ -1,7 +1,7 @@
 // Miroir Drizzle des migrations SQL (db/migrations). Les migrations font foi :
 // toute évolution passe par un nouveau fichier SQL, puis par une mise à jour de ce fichier.
 import { sql } from "drizzle-orm";
-import { bigint, boolean, date, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, integer, jsonb, pgTable, smallint, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 const tstz = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 const money = (name: string) => bigint(name, { mode: "number" });
@@ -115,6 +115,8 @@ export const userSettings = pgTable("user_settings", {
   userId: text("user_id").primaryKey(),
   theme: text("theme", { enum: ["auto", "light", "dark"] }).notNull().default("auto"),
   weeklyEmail: boolean("weekly_email").notNull().default(true),
+  startDay: smallint("start_day").notNull().default(1),
+  periodNaming: text("period_naming", { enum: ["end", "start"] }).notNull().default("end"),
   updatedAt: tstz("updated_at").notNull().defaultNow(),
 });
 

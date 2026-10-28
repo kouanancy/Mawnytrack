@@ -8,6 +8,8 @@ import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { appOrigin } from "@/lib/origin";
 import { currentWeekStart, generateReport, sendReport } from "@/lib/report";
+import { currentPeriod, isStartDay, periodName, periodSpan } from "@/lib/period";
+import { getPeriodSettings } from "@/lib/period-server";
 import { THEME_COOKIE, isTheme, type Theme } from "@/lib/theme";
 import { actionUserId } from "@/lib/session";
 
@@ -103,6 +105,33 @@ export async function sendTestReport(): Promise<SettingsResult> {
   } catch {
     return fail("Le rapport n'a pas pu être préparé. Réessayez.");
   }
+}
+
+/* ---------- Mois budgétaire ---------- */
+
+/**
+ * Enregistre le début du mois budgétaire. Aucune transaction n'est modifiée : seules les périodes de
+ * regroupement changent. Les budgets figés (monthly_budgets) étant rattachés aux anciennes périodes, ils sont
+ * effacés dans la même transaction et refigés selon les nouvelles périodes à la consultation suivante.
+ */
+export async function setBudgetPeriod(input: { startDay: number; naming: string }): Promise<SettingsResult> {
+  const userId = await actionUserId();
+  const { startDay, naming } = input;
+  if (!isStartDay(startDay)) return fail("Choisissez un jour entre le 1er et le 28.");
+  if (naming !== "end" && naming !== "start") return fail("Choix du nom de la période invalide.");
+  const before = await getPeriodSettings(userId);
+  if (before.startDay === startDay && before.naming === naming) return ok("Mois budgétaire inchangé.");
+  await db.batch([
+    db
+      .insert(schema.userSettings)
+      .values({ userId, startDay, periodNaming: naming })
+      .onConflictDoUpdate({ target: schema.userSettings.userId, set: { startDay, periodNaming: naming, updatedAt: sql`now()` } }),
+    db.execute(sql`delete from monthly_budgets where user_id = ${userId}`),
+  ]);
+  revalidatePath("/", "layout");
+  const ps = { startDay, naming } as const;
+  const key = currentPeriod(ps);
+  return ok(`Mois budgétaire enregistré. Mois en cours : ${periodName(key)}, ${periodSpan(key, ps)}.`);
 }
 
 /* ---------- Profil ---------- */
