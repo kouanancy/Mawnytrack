@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { addExpense, deleteTransaction } from "@/app/(app)/actions";
 import { CategoryFilter } from "@/components/CategoryFilter";
-import { IcoPrint, IcoWarn } from "@/components/Icons";
+import { IcoPrint } from "@/components/Icons";
 import { Journal } from "@/components/Journal";
 import type { MoveEdit } from "@/components/MoveEditForm";
 import { updateMove } from "@/app/(app)/prets/actions";
@@ -38,7 +38,6 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
   const [amount, setAmount] = useState("");
   const [label, setLabel] = useState("");
   const [lineId, setLineId] = useState<string | null>(null);
-  const [alert, setAlert] = useState<{ label: string; planned: number } | null>(null);
   const [filter, setFilter] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -80,18 +79,14 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
       at: new Date().toISOString(),
     };
     const sent = { month, amount: amt, label, lineId: line.id };
-    const spentAfter = line.spent + amt;
     setAmount("");
     setLabel("");
     amountRef.current?.focus();
-    setAlert(line.planned && spentAfter >= line.planned ? { label: line.label, planned: line.planned } : null);
     startTransition(async () => {
       addOp({ type: "add", entry });
       const res = await addExpense(sent);
-      if (!res.ok) {
-        setAlert(null);
-        toast(res.error);
-      } else if (line.direction === "lent") toast(`${fmt(amt)} FCFA ajoutés aux prêts de ${line.label}`);
+      if (!res.ok) toast(res.error);
+      else if (line.direction === "lent") toast(`${fmt(amt)} FCFA ajoutés aux prêts de ${line.label}`);
       else if (line.direction === "borrowed") toast(`${fmt(amt)} FCFA remboursés à ${line.label}`);
       else toast(`−${fmt(amt)} FCFA sur « ${line.label} »`);
     });
@@ -233,19 +228,6 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
               Enregistrer la sortie
             </button>
           </form>
-        )}
-
-        {alert && (
-          <div className="alert" role="alert">
-            <IcoWarn />
-            <div>
-              <b>Plus d&apos;argent sur la ligne « {alert.label} »</b>
-              <span>Les {fmt(alert.planned)} FCFA prévus sont entièrement dépensés.</span>
-            </div>
-            <button type="button" className="del" aria-label="Fermer le message" onClick={() => setAlert(null)}>
-              ×
-            </button>
-          </div>
         )}
       </div>
 

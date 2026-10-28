@@ -152,11 +152,6 @@ details.add form{padding:0 14px 14px;display:flex;flex-direction:column;gap:10px
 .hint{font-size:13px;color:var(--muted);margin:0}
 .bad{color:var(--alert);font-weight:600}
 .warn-t{color:var(--out);font-weight:600}
-.alert{display:flex;gap:10px;align-items:flex-start;background:var(--alert-soft);color:var(--alert);border-radius:14px;padding:12px 12px 12px 14px}
-.alert svg{flex:none;margin-top:2px}
-.alert div{flex:1;display:flex;flex-direction:column;gap:2px}
-.alert span{color:var(--ink);font-size:13px}
-.alert .del{color:var(--alert);font-size:20px}
 .bline{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
 .bline.over,.bline.empty{border-color:var(--alert)}
 .bline.empty{padding:12px 14px;text-align:left;color:inherit}
