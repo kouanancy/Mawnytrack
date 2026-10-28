@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CaisseMonth } from "@/lib/caisse";
 import { fmt, fmtNb } from "@/lib/format";
+import { savingSplit } from "@/lib/ledger";
 import { periodEndLabel, periodRange, type PeriodSettings } from "@/lib/period";
 
 const shortMonth = (m: string) => {
@@ -67,11 +68,52 @@ function Chart({ rows }: { rows: CaisseMonth[] }) {
 
 type Props = { months: CaisseMonth[]; saved: number; unspent: number; invested: number; available: number; ps: PeriodSettings };
 
-/** « Épargne prévue 50 000 + non dépensé 20 000 » (période terminée) ou « … · non dépensé ajouté le 21 novembre 2026 ». */
-function savingDetail(r: CaisseMonth, ps: PeriodSettings) {
-  if (!r.closed) return `Épargne prévue ${fmtNb(r.planSaving)} · non dépensé ajouté le ${periodEndLabel(r.month, ps)}`;
-  if (r.unspent < 0) return `Épargne prévue ${fmtNb(r.planSaving)} − dépenses hors budget ${fmtNb(-r.unspent)}`;
-  return `Épargne prévue ${fmtNb(r.planSaving)} + non dépensé ${fmtNb(r.unspent)}`;
+type DetailRow = { label: string; value: string; kind?: "total" | "soft" };
+
+/** Détail d'une période : petit tableau libellé / montant, puis une mention. */
+function PeriodDetail({ r, ps }: { r: CaisseMonth; ps: PeriodSettings }) {
+  let rows: DetailRow[];
+  let note: string;
+  if (r.closed) {
+    rows = [
+      { label: "Revenus", value: fmt(r.income) },
+      { label: "− Dépenses réelles", value: fmt(r.out) },
+      { label: "= Épargne de la période", value: fmt(r.saving), kind: "total" },
+    ];
+    note =
+      r.unspent < 0
+        ? `dont épargne prévue ${fmtNb(r.planSaving)} − dépenses hors budget ${fmtNb(-r.unspent)}`
+        : `dont épargne prévue ${fmtNb(r.planSaving)} + non dépensé ${fmtNb(r.unspent)}`;
+  } else {
+    // Période en cours : seule l'épargne prévue compte ; le non dépensé rejoint la caisse à la clôture
+    const { unspent } = savingSplit(r.income, r.planned, r.out);
+    rows = [
+      { label: "Revenus", value: fmt(r.income) },
+      { label: "− Budget prévu", value: fmt(r.planned) },
+      { label: "= Épargne prévue", value: fmt(r.planSaving), kind: "total" },
+      { label: "Dépensé à ce jour", value: fmt(r.out) },
+      unspent < 0
+        ? { label: "Dépenses hors budget à ce jour", value: fmt(-unspent), kind: "soft" }
+        : { label: "Non dépensé à ce jour", value: fmt(unspent), kind: "soft" },
+    ];
+    note = `Ajouté à la caisse le ${periodEndLabel(r.month, ps)} pour la part restant non dépensée`;
+  }
+  return (
+    <>
+      <table className="cm-tbl">
+        <tbody>
+          {rows.map((x) => (
+            <tr key={x.label} className={x.kind}>
+              <th scope="row">{x.label}</th>
+              <td className="num">{x.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="cm-note num">{note}</p>
+      {r.invested > 0 && <p className="cm-note num">Sorties vers les investissements : {fmtNb(r.invested)}</p>}
+    </>
+  );
 }
 
 export function CaisseView({ months, saved, unspent, invested, available, ps }: Props) {
@@ -130,22 +172,20 @@ export function CaisseView({ months, saved, unspent, invested, available, ps }: 
             </div>
             <div className="list">
               {recent.map((r) => (
-                <div className="item" key={r.month}>
-                  <div className="meta">
-                    <b style={{ textTransform: "capitalize" }}>{longMonth(r.month)}</b>
-                    {ps.startDay !== 1 && <span>{periodRange(r.month, ps)}</span>}
-                    <span className="num">{savingDetail(r, ps)}</span>
-                    <span className="num">
-                      Revenus {fmt(r.income)} · budget {fmt(r.planned)} · dépensé {fmt(r.out)}
-                      {r.invested > 0 && ` · investi ${fmt(r.invested)}`}
-                    </span>
+                <div className="item cm" key={r.month}>
+                  <div className="cm-head">
+                    <div className="meta">
+                      <b style={{ textTransform: "capitalize" }}>{longMonth(r.month)}</b>
+                      {ps.startDay !== 1 && <span>{periodRange(r.month, ps)}</span>}
+                    </div>
+                    <div className="pr">
+                      <span className="amt num i">+{fmt(r.saving)}</span>
+                      <span className="num caisse-cum">
+                        {r.closed ? "Caisse en fin de période" : "Caisse à ce jour"} {fmtNb(r.cum)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="pr">
-                    <span className="amt num i">+{fmt(r.saving)}</span>
-                    <span className="num caisse-cum">
-                      {r.closed ? "Caisse fin de mois" : "Caisse à ce jour"} {fmt(r.cum)}
-                    </span>
-                  </div>
+                  <PeriodDetail r={r} ps={ps} />
                 </div>
               ))}
             </div>

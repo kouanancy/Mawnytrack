@@ -203,9 +203,14 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   rapport hebdomadaire.
 - Écran : carte « Disponible en caisse » (total épargné, « dont non dépensé : Z », total investi, lien vers
   Investissements), graphique « Évolution » (caisse cumulée en courbe pleine avec dégradé, épargne de la période en
-  pointillés `--out`), « Détail par mois » du plus récent au plus ancien : « Épargne prévue X + non dépensé Y »,
-  total de la période et « Caisse fin de mois » ; période en cours : « Épargne prévue X · non dépensé ajouté le
-  [dernier jour] » et « Caisse à ce jour ».
+  pointillés `--out`), « Détail par mois » du plus récent au plus ancien. Chaque période : en-tête (nom, dates ;
+  à droite le montant ajouté à la caisse puis « Caisse à ce jour » ou « Caisse en fin de période »), puis un petit
+  tableau libellé / montant aligné à droite (`.cm-tbl`) :
+  - période en cours : Revenus, − Budget prévu, = Épargne prévue (gras), Dépensé à ce jour, Non dépensé à ce jour
+    (gris), mention « Ajouté à la caisse le [dernier jour] pour la part restant non dépensée » ;
+  - période terminée : Revenus, − Dépenses réelles, = Épargne de la période (gras), puis « dont épargne prévue X
+    + non dépensé Y » ;
+  - « Sorties vers les investissements : X » en dessous quand la période en a.
 - Budget › « Épargne supplémentaire » : épargne prévue, puis « + non dépensé à ce jour : X FCFA (ajouté à la caisse
   le [dernier jour]) » pour la période en cours (« + non dépensé : X FCFA » pour une période terminée).
 
