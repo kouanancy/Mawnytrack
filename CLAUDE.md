@@ -111,6 +111,15 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   d'un mois terminé, les valeurs sont figées dans `monthly_budgets` (`freezeMonth` dans `lib/data.ts`).
   Modifier le budget d'un mois terminé change sa valeur figée ; pour le mois en cours ou à venir, la valeur par défaut.
 - Épargne supplémentaire = revenus − budget prévu ; avertissement si le budget prévu dépasse les revenus.
+- Budget › « Argent restant » (synthèse) : bouton « Voir le détail › » qui ouvre le panneau « Reste par ligne »
+  (`components/RestSheet.tsx` : monte du bas sur téléphone, centré à partir de 768 px ; croix, Échap ou appui à
+  l'extérieur ; focus gardé dans le panneau). Titre + période (« novembre 2026 · 22 oct. – 21 nov. »), tableau
+  Ligne · Prévu · Dépensé · Reste des lignes au budget prévu > 0 dont le reste est positif, groupées comme le
+  Budget (groupe vide masqué), triées du plus grand reste au plus petit ; « Total restant sur les lignes » ; sinon
+  « Toutes les lignes sont entièrement dépensées. ». Si l'argent restant diffère du total : « Revenus non affectés
+  à une ligne : X FCFA » (ou « Part des restes non couverte par les revenus ») puis « Argent restant : Y FCFA ».
+  Calculé depuis les données déjà chargées (mêmes chiffres que `lineState`, aucune requête de plus). Un appui sur
+  une ligne ferme le panneau et fait défiler jusqu'à la carte `#line-<id>`, signalée brièvement (`.flash`).
 
 ### Mois budgétaire (`lib/period.ts`, `lib/period-server.ts`)
 - Un « mois » est une période qui commence le jour `user_settings.start_day` (1 à 28, défaut 1) et finit la veille

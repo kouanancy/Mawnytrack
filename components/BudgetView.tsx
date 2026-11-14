@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useOptimistic, useState, useTransition } from "react";
+import { useCallback, useOptimistic, useState, useTransition } from "react";
 import { addLine, deleteLine, setPlanned } from "@/app/(app)/actions";
 import { IcoTrash } from "@/components/Icons";
+import { RestSheet } from "@/components/RestSheet";
 import { useToast } from "@/components/Toast";
 import type { Line, MonthData } from "@/lib/data";
 import { fmt, fmtNb, formatInput, parseAmount, plural } from "@/lib/format";
@@ -16,14 +17,31 @@ type Props = {
   status: "past" | "current" | "future";
   /** Dernier jour de la période (« 21 novembre 2026 ») : le non dépensé rejoint la caisse à sa clôture */
   endLabel: string;
+  /** « novembre 2026 · 22 oct. – 21 nov. » (titre du détail de l'argent restant) */
+  period: string;
 };
 
-export function BudgetView({ data, month, status, endLabel }: Props) {
+export function BudgetView({ data, month, status, endLabel, period }: Props) {
   const [view, addOp] = useOptimistic(data, reduce);
   const [, startTransition] = useTransition();
   const toast = useToast();
   const [confirm, setConfirm] = useState<string | null>(null);
   const [adding, setAdding] = useState(data.lines.length === 0);
+  const [detail, setDetail] = useState(false);
+  const closeDetail = useCallback(() => setDetail(false), []);
+
+  /** Ligne choisie dans le détail : fermer le panneau et faire défiler jusqu'à la ligne, signalée brièvement. */
+  function pickLine(id: string) {
+    setDetail(false);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`line-${id}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.remove("flash");
+      void el.offsetWidth;
+      el.classList.add("flash");
+    });
+  }
 
   const income = view.totals.income;
   const { out, rest } = summary(view.totals);
@@ -129,7 +147,7 @@ export function BudgetView({ data, month, status, endLabel }: Props) {
     }[st.state];
     const pending = isTemp(l.id);
     return (
-      <div className={`bline ${st.state}`} key={l.id}>
+      <div className={`bline ${st.state}`} key={l.id} id={`line-${l.id}`}>
         <div className="bl-top">
           <b>{l.label}</b>
           {l.personId ? (
@@ -201,10 +219,11 @@ export function BudgetView({ data, month, status, endLabel }: Props) {
             {fmt(out)}
           </strong>
         </div>
-        <div>
+        <button type="button" className="sum-link" aria-haspopup="dialog" onClick={() => setDetail(true)}>
           <span>Argent restant</span>
           <strong className={`num${rest < 0 ? " bad" : ""}`}>{fmt(rest)}</strong>
-        </div>
+          <small>Voir le détail ›</small>
+        </button>
         {planned > income ? (
           <>
             <p className="bad sum-warn">
@@ -279,6 +298,7 @@ export function BudgetView({ data, month, status, endLabel }: Props) {
           <div className="lines-grid">{borrowed.map(card)}</div>
         </>
       )}
+      {detail && <RestSheet lines={view.lines} rest={rest} period={period} onClose={closeDetail} onPick={pickLine} />}
     </>
   );
 }
