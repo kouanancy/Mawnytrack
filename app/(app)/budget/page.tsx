@@ -1,6 +1,6 @@
 import { BudgetView } from "@/components/BudgetView";
 import { getMonthData } from "@/lib/data";
-import { currentPeriod, parsePeriod, periodEndLabel } from "@/lib/period";
+import { currentPeriod, parsePeriod, periodEndLabel, periodName, periodRange } from "@/lib/period";
 import { getPeriodSettings } from "@/lib/period-server";
 import { requireUserId } from "@/lib/session";
 
@@ -11,5 +11,14 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ m
   const data = await getMonthData(userId, month, []);
   const current = currentPeriod(ps);
   const status = month < current ? "past" : month === current ? "current" : "future";
-  return <BudgetView key={month} data={data} month={month} status={status} endLabel={periodEndLabel(month, ps)} />;
+  return (
+    <BudgetView
+      key={month}
+      data={data}
+      month={month}
+      status={status}
+      endLabel={periodEndLabel(month, ps)}
+      period={`${periodName(month)} · ${periodRange(month, ps)}`}
+    />
+  );
 }
