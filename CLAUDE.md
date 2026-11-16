@@ -260,8 +260,11 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   rosé, icône d'impression sur chaque sortie), modification au toucher (`MoveEditForm`, paramètre `check`) et
   suppression confirmée dans la page. En bas : « Clôturer le projet » (« Confirmer : rendre X FCFA à la caisse et
   clôturer » : restitution du solde puis `closed_at`) et « Supprimer ce projet » (l'alloué revient en caisse).
-- Liste : cartes Projet avec le solde en grand, « Alloué X / nécessaire Y » et « Dépensé Z » ; section
-  « Projets clôturés » en bas ; « Dans les caisses des projets » (somme des soldes) dans la carte du haut.
+- Liste : cartes Projet avec le solde en grand, « Alloué X / nécessaire Y » et « Dépensé Z ». Résumé du haut
+  selon le filtre : « Tout » et « Investissements » gardent le résumé d'origine (Disponible en caisse, Déjà investi,
+  Reste à financer, des éléments affichés), sans chiffre des caisses de projets ; « Projets » affiche « Disponible
+  dans la caisse principale », « Dans les caisses des projets » (somme des soldes) et « Dépensé sur les projets ».
+  La section « Projets clôturés » (en bas) n'apparaît qu'avec le filtre « Projets ».
 - Rapport (`lib/project-report.ts`, page `/investissements/[id]/rapport?apres=<sortie>` et PDF
   `/rapport/pdf`) : complet ou après une sortie (mouvements jusqu'à elle, ligne surlignée en `--out-soft`, gras ;
   style PDF `highlight`). Date · Libellé · Entrée · Sortie · Solde (« (restitution) »), « Totaux », « Solde du
