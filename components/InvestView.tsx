@@ -40,16 +40,20 @@ export function InvestView({ projects, available }: { projects: Project[]; avail
   const [filter, setFilter] = useState<Filter>("all");
   const [open, setOpen] = useState(projects.length === 0);
 
-  const invested = view.reduce((a, p) => a + p.engaged, 0);
-  const toFund = view.reduce((a, p) => a + projectState(p).rest, 0);
-  // Somme des soldes des caisses des projets
-  const inProjects = view.reduce((a, p) => a + (p.kind === "project" ? p.balance : 0), 0);
-  // Les éléments financés en bas de la liste ; les projets clôturés dans leur propre section
+  const projectsOnly = filter === "project";
   const shown = view.filter((p) => filter === "all" || p.kind === filter);
+  // Résumé d'origine (Tout, Investissements) : déjà investi et reste à financer des éléments affichés
+  const invested = shown.reduce((a, p) => a + p.engaged, 0);
+  const toFund = shown.reduce((a, p) => a + projectState(p).rest, 0);
+  // Résumé des caisses des projets (filtre « Projets » uniquement)
+  const projectItems = view.filter((p) => p.kind === "project");
+  const inProjects = projectItems.reduce((a, p) => a + p.balance, 0);
+  const spentOnProjects = projectItems.reduce((a, p) => a + p.spent, 0);
+  // Les éléments financés en bas de la liste ; les projets clôturés dans leur section, avec le filtre « Projets »
   const list = shown
     .filter((p) => !p.closed)
     .sort((a, b) => Number(projectState(a).rest === 0) - Number(projectState(b).rest === 0));
-  const closed = shown.filter((p) => p.closed);
+  const closed = projectsOnly ? shown.filter((p) => p.closed) : [];
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -72,34 +76,50 @@ export function InvestView({ projects, available }: { projects: Project[]; avail
   return (
     <div className="cols">
       <div className="stack col">
-        <section className="hero" aria-label="Caisse disponible">
-          <div className="lbl">Disponible en caisse</div>
-          <div className={`big num${available < 0 ? " neg" : ""}`}>
-            {fmt(available)}
-            <small>FCFA</small>
-          </div>
-          <div className="split three">
-            <div>
-              <span>Déjà investi</span>
-              <strong className="num">{fmt(invested)}</strong>
+        {projectsOnly ? (
+          <section className="hero" aria-label="Caisses des projets">
+            <div className="lbl">Disponible dans la caisse principale</div>
+            <div className={`big num${available < 0 ? " neg" : ""}`}>
+              {fmt(available)}
+              <small>FCFA</small>
             </div>
-            <div>
-              <span>Reste à financer</span>
-              <strong className="num">{fmt(toFund)}</strong>
+            <div className="split">
+              <div>
+                <span>Dans les caisses des projets</span>
+                <strong className="num">{fmt(inProjects)}</strong>
+              </div>
+              <div>
+                <span>Dépensé sur les projets</span>
+                <strong className="num">{fmt(spentOnProjects)}</strong>
+              </div>
             </div>
-            <div>
-              <span>Dans les caisses des projets</span>
-              <strong className="num">{fmt(inProjects)}</strong>
+          </section>
+        ) : (
+          <section className="hero" aria-label="Caisse disponible">
+            <div className="lbl">Disponible en caisse</div>
+            <div className={`big num${available < 0 ? " neg" : ""}`}>
+              {fmt(available)}
+              <small>FCFA</small>
             </div>
-          </div>
-          {toFund > available ? (
-            <div className="pct" style={{ color: "var(--hero-ink)" }}>
-              La caisse couvre {Math.max(0, Math.round((available / toFund) * 100))} % des besoins restants.
+            <div className="split">
+              <div>
+                <span>Déjà investi</span>
+                <strong className="num">{fmt(invested)}</strong>
+              </div>
+              <div>
+                <span>Reste à financer</span>
+                <strong className="num">{fmt(toFund)}</strong>
+              </div>
             </div>
-          ) : (
-            <div className="pct">La caisse couvre tous les besoins restants.</div>
-          )}
-        </section>
+            {toFund > available ? (
+              <div className="pct" style={{ color: "var(--hero-ink)" }}>
+                La caisse couvre {Math.max(0, Math.round((available / toFund) * 100))} % des besoins restants.
+              </div>
+            ) : (
+              <div className="pct">La caisse couvre tous les besoins restants.</div>
+            )}
+          </section>
+        )}
         <div className="seg seg3" role="group" aria-label="Type">
           {(
             [
@@ -157,7 +177,7 @@ export function InvestView({ projects, available }: { projects: Project[]; avail
         ) : (
           <div className="list">
             <div className="empty">
-              {closed.length ? "Aucun élément en cours." : "Aucun élément. Ajoutez un investissement ou un projet."}
+              {shown.some((p) => p.closed) ? "Aucun élément en cours." : "Aucun élément. Ajoutez un investissement ou un projet."}
             </div>
           </div>
         )}
