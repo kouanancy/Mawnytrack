@@ -203,6 +203,7 @@ export async function resetAccount(input: { word: string; password: string }): P
   await db.batch([
     db.execute(sql`delete from transactions where user_id = ${userId}`),
     db.execute(sql`delete from project_disbursements where user_id = ${userId}`),
+    db.execute(sql`delete from project_moves where user_id = ${userId}`),
     db.execute(sql`delete from projects where user_id = ${userId}`),
     db.execute(sql`delete from monthly_budgets where user_id = ${userId}`),
     db.execute(sql`delete from budget_lines where user_id = ${userId}`),

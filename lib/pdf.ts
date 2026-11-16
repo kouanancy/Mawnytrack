@@ -7,7 +7,7 @@ import { LineCapStyle, PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPa
 // Un PDF ne lit pas les variables CSS : comme pour les e-mails, la palette claire est écrite ici.
 
 const hex = (h: string) => rgb(parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255);
-const C = { ink: hex("#0F2B25"), muted: hex("#4F635B"), line: hex("#D5E0DA"), soft: hex("#F3F7F5"), alert: hex("#C8372D"), accent: hex("#0B7A5C"), hero: hex("#0F3B32"), bar: hex("#7FE0B9"), out: hex("#F4A089") };
+const C = { ink: hex("#0F2B25"), muted: hex("#4F635B"), line: hex("#D5E0DA"), soft: hex("#F3F7F5"), alert: hex("#C8372D"), accent: hex("#0B7A5C"), hero: hex("#0F3B32"), bar: hex("#7FE0B9"), out: hex("#F4A089"), outSoft: hex("#FBE7E1") };
 
 const PAGE_W = 595.28, PAGE_H = 841.89;
 const M = (15 / 25.4) * 72; // 15 mm
@@ -15,8 +15,14 @@ const W = PAGE_W - 2 * M;
 
 export type Column = { label: string; width: number; align?: "left" | "right" };
 /** Cellule null : fusionnée avec la cellule précédente (colspan). */
-/** group : titre de groupe ; subtotal : sous-total ; total / end : bas du tableau ; alert : ligne signalée (rouge). */
-export type TableRow = { cells: (string | null)[]; style?: "normal" | "muted" | "bold" | "group" | "subtotal" | "total" | "end" | "alert" };
+/**
+ * group : titre de groupe ; subtotal : sous-total ; total / end : bas du tableau ; alert : ligne signalée (rouge) ;
+ * highlight : ligne mise en avant (fond orange rosé clair, gras).
+ */
+export type TableRow = {
+  cells: (string | null)[];
+  style?: "normal" | "muted" | "bold" | "group" | "subtotal" | "total" | "end" | "alert" | "highlight";
+};
 
 export type TableDoc = {
   title: string;
@@ -28,6 +34,8 @@ export type TableDoc = {
   rows: TableRow[];
   empty?: string;
   footer?: TableRow[];
+  /** Mention en petit sous le tableau */
+  after?: string;
 };
 
 /** Remplace les caractères absents de la police standard (WinAnsi). */
@@ -80,13 +88,14 @@ function drawLogo(page: PDFPage, x: number, yTop: number, size: number) {
 }
 
 /** Un tableau d'un document à plusieurs sections (rapport hebdomadaire). */
-export type TableSpec = { heading?: string; note?: string; columns: Column[]; rows: TableRow[]; empty?: string; footer?: TableRow[] };
-export type MultiDoc = Omit<TableDoc, "columns" | "rows" | "empty" | "footer"> & { tables: TableSpec[] };
+/** after : mention en petit sous le tableau */
+export type TableSpec = { heading?: string; note?: string; columns: Column[]; rows: TableRow[]; empty?: string; footer?: TableRow[]; after?: string };
+export type MultiDoc = Omit<TableDoc, "columns" | "rows" | "empty" | "footer" | "after"> & { tables: TableSpec[] };
 
 /** Document d'un seul tableau (relevé, sorties filtrées). */
 export function tablePdf(doc: TableDoc): Promise<Uint8Array> {
-  const { columns, rows, empty, footer, ...head } = doc;
-  return documentPdf({ ...head, tables: [{ columns, rows, empty, footer }] });
+  const { columns, rows, empty, footer, after, ...head } = doc;
+  return documentPdf({ ...head, tables: [{ columns, rows, empty, footer, after }] });
 }
 
 /**
@@ -154,7 +163,9 @@ export async function documentPdf(doc: MultiDoc): Promise<Uint8Array> {
   };
 
   const drawRow = (row: TableRow) => {
-    const strong = row.style === "bold" || row.style === "group" || row.style === "subtotal" || row.style === "total" || row.style === "end" || row.style === "alert";
+    const strong =
+      row.style === "bold" || row.style === "group" || row.style === "subtotal" || row.style === "total" || row.style === "end" ||
+      row.style === "alert" || row.style === "highlight";
     const font = strong ? bold : row.style === "muted" ? italic : regular;
     const color =
       row.style === "muted" || row.style === "subtotal" ? C.muted : row.style === "group" ? C.accent : row.style === "alert" ? C.alert : C.ink;
@@ -173,6 +184,7 @@ export async function documentPdf(doc: MultiDoc): Promise<Uint8Array> {
       columnsHeader();
     }
     if (row.style === "group") page.drawRectangle({ x: M, y: y - h, width: W, height: h, color: C.soft });
+    if (row.style === "highlight") page.drawRectangle({ x: M, y: y - h, width: W, height: h, color: C.outSoft });
     if (row.style === "total") page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: 1.5, color: C.ink });
     cells.forEach((c, k) => {
       lines[k].forEach((l, j) => {
@@ -208,6 +220,14 @@ export async function documentPdf(doc: MultiDoc): Promise<Uint8Array> {
     if (t.rows.length) t.rows.forEach(drawRow);
     else drawRow({ cells: [t.empty ?? "Aucun mouvement.", ...t.columns.slice(1).map(() => null)], style: "muted" });
     for (const r of t.footer ?? []) drawRow(r);
+    if (t.after) {
+      for (const l of wrap(regular, 9, safe(regular, t.after), W)) {
+        if (y - 14 < M + 16) newPage();
+        page.drawText(l, { x: M, y: y - 14, size: 9, font: regular, color: C.muted });
+        y -= 13;
+      }
+      y -= 4;
+    }
   });
 
   pages.forEach((p, i) => {

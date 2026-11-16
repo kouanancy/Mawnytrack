@@ -208,7 +208,8 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   - période en cours : épargne = épargne prévue ; le non dépensé n'est ajouté qu'à la clôture (fin du dernier jour,
     fuseau Africa/Abidjan) — même règle partout (`savingSplit` dans `lib/ledger.ts` côté interface).
 - Disponible en caisse = somme des épargnes, de la première période ayant un revenu à la période en cours,
-  − toutes les sorties vers les investissements (`project_disbursements`). Historique calculé en une seule requête
+  − toutes les sorties vers les investissements (`project_disbursements`) − les approvisionnements des projets
+  + leurs restitutions (`project_moves`, voir Investissements › Projets). Historique calculé en une seule requête
   SQL (`savingsCtes`), recalculé à chaque lecture : modifier ou supprimer une transaction d'une période terminée met
   à jour son épargne et la caisse. `caisseAvailableSql` sert aussi au contrôle des sorties (Investissements) et au
   rapport hebdomadaire.
@@ -235,6 +236,41 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - Règle : une sortie ne dépasse jamais le disponible en caisse ni le reste à financer. Message pendant la saisie,
   bouton désactivé, et contrôle serveur dans une transaction sous verrou consultatif par utilisateur
   (`pg_advisory_xact_lock`), qui sérialise aussi les changements de montant nécessaire.
+- Les règles ci-dessus (sorties `project_disbursements`) ne valent plus que pour les éléments de type
+  « Investissement ». Les éléments de type « Projet » ont leur propre caisse (ci-dessous).
+
+### Projets : caisse propre (`project_moves`, migration `007_project_moves.sql`, `lib/project-cash.ts`)
+- Table `project_moves` (type `fund` = approvisionnement depuis la caisse principale, `out` = sortie du projet,
+  `back` = restitution du solde à la caisse principale) ; `projects.closed_at` (projet clôturé, lecture seule).
+  Reprise : les anciennes sorties des projets sont devenues des `fund` (même montant, libellé, date).
+- Alloué = approvisionnements − restitutions ; solde du projet = alloué − sorties. Caisse principale :
+  disponible = épargnes − sorties des investissements − approvisionnements + restitutions (`caisseAvailableSql`).
+  Les sorties d'un projet ne touchent ni la caisse principale, ni le budget, ni les dépenses du mois.
+- Règles (`checkProjectMove`, interface pendant la saisie, et serveur dans une transaction sous le verrou
+  `pg_advisory_xact_lock` de la caisse, conditions SQL `allowed`) : solde du projet et caisse principale jamais
+  négatifs, alloué jamais au-delà du montant nécessaire (modifiable, jamais sous l'alloué) ; une modification qui
+  n'aggrave rien reste possible ; suppression avec les mêmes contrôles ; projet clôturé en lecture seule.
+- Fiche (`components/ProjectCashView.tsx`) : retour « Investissements », icône d'impression (rapport complet) ;
+  initiale, nom, « Projet », statut « En préparation » / « En cours » / « Clôturé » ; totaux Alloué · Dépensé
+  (`--out`) · Solde du projet (`--in`) ; montant nécessaire et jauge « Alloué X / nécessaire Y » ;
+  « + Approvisionner depuis la caisse » (rappel du disponible de la caisse principale) et « + Enregistrer une
+  sortie » (ouvert, bouton orange rosé ; « La caisse du projet est vide. Approvisionnez-la d'abord. ») ;
+  après une sortie, encadré vert clair `.okbox` (montant, libellé, nouveau solde, bouton « Rapport », croix).
+  « Mouvements » du plus récent au plus ancien (approvisionnements et restitutions en vert, sorties en orange
+  rosé, icône d'impression sur chaque sortie), modification au toucher (`MoveEditForm`, paramètre `check`) et
+  suppression confirmée dans la page. En bas : « Clôturer le projet » (« Confirmer : rendre X FCFA à la caisse et
+  clôturer » : restitution du solde puis `closed_at`) et « Supprimer ce projet » (l'alloué revient en caisse).
+- Liste : cartes Projet avec le solde en grand, « Alloué X / nécessaire Y » et « Dépensé Z » ; section
+  « Projets clôturés » en bas ; « Dans les caisses des projets » (somme des soldes) dans la carte du haut.
+- Rapport (`lib/project-report.ts`, page `/investissements/[id]/rapport?apres=<sortie>` et PDF
+  `/rapport/pdf`) : complet ou après une sortie (mouvements jusqu'à elle, ligne surlignée en `--out-soft`, gras ;
+  style PDF `highlight`). Date · Libellé · Entrée · Sortie · Solde (« (restitution) »), « Totaux », « Solde du
+  projet après cette sortie » / « à ce jour », mention « Alloué depuis la caisse · Dépensé · Restitué à la caisse ».
+  « Imprimer » ouvre l'aperçu ; fichier `Rapport-[projet]-[AAAA-MM-JJ].pdf`. Téléphone : dates JJ/MM.
+- Caisse : « vers projets X » (approvisionnements − restitutions de la période) à côté des investissements ;
+  « Total investi » inclut l'alloué aux projets (« dont vers projets »). Rapport hebdomadaire : sections
+  « Projets · approvisionnements et sorties de la semaine » et « Projets · solde de chaque caisse », et « Dans
+  les caisses des projets » dans la synthèse de l'e-mail. Export et « Tout réinitialiser » incluent `project_moves`.
 
 ## Rapports (`/rapports`, `lib/report.ts`, `lib/report-model.ts`, `app/api/cron/weekly-report`)
 - Semaine du lundi au dimanche, fuseau `APP_TIMEZONE` (Africa/Abidjan). Rapport calculé par `computeReport`
@@ -274,7 +310,7 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - Données : « Exporter mes données » (`/reglages/export`, JSON unique de toutes les tables de l'utilisateur, sans
   mot de passe ni jeton) ; « Tout réinitialiser » = remise à zéro comme pour une première utilisation : suppression
   dans une seule transaction des transactions (donc prêts, emprunts et remboursements), lignes, budgets figés,
-  personnes, projets, sorties de caisse, rapports hebdomadaires et réglages ; seuls l'e-mail et le mot de passe restent ; autres appareils déconnectés ; retour à Dépenses.
+  personnes, projets, sorties de caisse, mouvements des caisses des projets, rapports hebdomadaires et réglages ; seuls l'e-mail et le mot de passe restent ; autres appareils déconnectés ; retour à Dépenses.
 - Compte : « Supprimer mon compte » efface l'utilisateur et, par cascade, toutes ses données et sessions.
 - Réinitialisation et suppression : double confirmation dans la page (mot « RÉINITIALISER » + mot de passe),
   revérifiée côté serveur (`verifyPassword`), limitée à l'utilisateur de la session.

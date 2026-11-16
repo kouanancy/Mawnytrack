@@ -8,12 +8,23 @@ import { useToast } from "@/components/Toast";
 import type { Project } from "@/lib/caisse";
 import { fmt, formatInput, parseAmount } from "@/lib/format";
 import { tempId } from "@/lib/ledger";
+import { projectStatus } from "@/lib/project-cash";
 
-/** État d'un projet : engagé, reste à financer, jauge et statut. */
+/**
+ * État d'un élément : engagé (investissement) ou alloué (projet), reste à financer, jauge et statut.
+ * Un projet clôturé n'a plus de reste à financer.
+ */
 export function projectState(p: Project) {
-  const rest = Math.max(0, p.target - p.engaged);
+  const rest = p.closed ? 0 : Math.max(0, p.target - p.engaged);
   const pct = p.target ? Math.min(100, (p.engaged / p.target) * 100) : 0;
-  const status: [string, string] = p.engaged === 0 ? ["run", "En préparation"] : rest === 0 ? ["ok", "Financé"] : ["prog", "En cours"];
+  const status: [string, string] =
+    p.kind === "project"
+      ? projectStatus(p)
+      : p.engaged === 0
+        ? ["run", "En préparation"]
+        : rest === 0
+          ? ["ok", "Financé"]
+          : ["prog", "En cours"];
   return { rest, pct, status };
 }
 
@@ -31,10 +42,14 @@ export function InvestView({ projects, available }: { projects: Project[]; avail
 
   const invested = view.reduce((a, p) => a + p.engaged, 0);
   const toFund = view.reduce((a, p) => a + projectState(p).rest, 0);
-  // Les éléments financés en bas de la liste
-  const list = view
-    .filter((p) => filter === "all" || p.kind === filter)
+  // Somme des soldes des caisses des projets
+  const inProjects = view.reduce((a, p) => a + (p.kind === "project" ? p.balance : 0), 0);
+  // Les éléments financés en bas de la liste ; les projets clôturés dans leur propre section
+  const shown = view.filter((p) => filter === "all" || p.kind === filter);
+  const list = shown
+    .filter((p) => !p.closed)
     .sort((a, b) => Number(projectState(a).rest === 0) - Number(projectState(b).rest === 0));
+  const closed = shown.filter((p) => p.closed);
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -46,7 +61,7 @@ export function InvestView({ projects, available }: { projects: Project[]; avail
     if (!name || !target) return toast("Indiquez un nom et un montant");
     form.reset();
     startTransition(async () => {
-      add({ id: tempId(), name, kind, target, engaged: 0 });
+      add({ id: tempId(), name, kind, target, engaged: 0, spent: 0, back: 0, balance: 0, closed: false });
       const r = await createProject({ name, kind, target });
       if (!r.ok) return toast(r.error);
       toast(`Créé : ${name}`);
@@ -63,7 +78,7 @@ export function InvestView({ projects, available }: { projects: Project[]; avail
             {fmt(available)}
             <small>FCFA</small>
           </div>
-          <div className="split">
+          <div className="split three">
             <div>
               <span>Déjà investi</span>
               <strong className="num">{fmt(invested)}</strong>
@@ -71,6 +86,10 @@ export function InvestView({ projects, available }: { projects: Project[]; avail
             <div>
               <span>Reste à financer</span>
               <strong className="num">{fmt(toFund)}</strong>
+            </div>
+            <div>
+              <span>Dans les caisses des projets</span>
+              <strong className="num">{fmt(inProjects)}</strong>
             </div>
           </div>
           {toFund > available ? (
@@ -124,7 +143,7 @@ export function InvestView({ projects, available }: { projects: Project[]; avail
             </div>
             <p className="hint">
               Les sorties d&apos;argent de ce volet sont prélevées uniquement sur la caisse. Elles ne touchent ni le budget
-              ni les dépenses du mois.
+              ni les dépenses du mois. Un projet a sa propre caisse, approvisionnée depuis la caisse principale.
             </p>
             <button className="btn" type="submit">
               Créer
@@ -134,35 +153,78 @@ export function InvestView({ projects, available }: { projects: Project[]; avail
       </div>
       <div className="col">
         {list.length ? (
-          list.map((p) => {
-            const s = projectState(p);
-            return (
-              <Link key={p.id} className="proj" href={`/investissements/${p.id}`} aria-disabled={p.id.startsWith("tmp-")}>
-                <div className="pj-top">
-                  <div className="meta">
-                    <b>{p.name}</b>
-                    <span>{kindName(p.kind)}</span>
-                  </div>
-                  <span className={`pill ${s.status[0]}`}>{s.status[1]}</span>
-                </div>
-                <div className="lbar">
-                  <i style={{ width: `${s.pct}%` }} />
-                </div>
-                <div className="sub num">
-                  <span>
-                    {fmt(p.engaged)} / {fmt(p.target)} FCFA
-                  </span>
-                  <span>{s.rest ? `Reste ${fmt(s.rest)}` : "Objectif atteint"}</span>
-                </div>
-              </Link>
-            );
-          })
+          list.map((p) => <Card key={p.id} p={p} />)
         ) : (
           <div className="list">
-            <div className="empty">Aucun élément. Ajoutez un investissement ou un projet.</div>
+            <div className="empty">
+              {closed.length ? "Aucun élément en cours." : "Aucun élément. Ajoutez un investissement ou un projet."}
+            </div>
           </div>
+        )}
+        {closed.length > 0 && (
+          <>
+            <div className="sect">
+              <h2>Projets clôturés</h2>
+              <span>{closed.length}</span>
+            </div>
+            {closed.map((p) => (
+              <Card key={p.id} p={p} />
+            ))}
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+/** Carte d'un élément. Projet : solde de sa caisse en grand, « Alloué X / nécessaire Y » et « Dépensé Z ». */
+function Card({ p }: { p: Project }) {
+  const s = projectState(p);
+  const temp = p.id.startsWith("tmp-");
+  if (p.kind === "project")
+    return (
+      <Link className={`proj${p.closed ? " closed" : ""}`} href={`/investissements/${p.id}`} aria-disabled={temp}>
+        <div className="pj-top">
+          <div className="meta">
+            <b>{p.name}</b>
+            <span>
+              {kindName(p.kind)} · <span className={`pill ${s.status[0]}`}>{s.status[1]}</span>
+            </span>
+          </div>
+          <div className="pj-bal">
+            <strong className="num">{fmt(p.balance)}</strong>
+            <span>Solde du projet</span>
+          </div>
+        </div>
+        <div className="lbar">
+          <i style={{ width: `${s.pct}%` }} />
+        </div>
+        <div className="sub num">
+          <span>
+            Alloué {fmt(p.engaged)} / nécessaire {fmt(p.target)}
+          </span>
+          <span>Dépensé {fmt(p.spent)}</span>
+        </div>
+      </Link>
+    );
+  return (
+    <Link className="proj" href={`/investissements/${p.id}`} aria-disabled={temp}>
+      <div className="pj-top">
+        <div className="meta">
+          <b>{p.name}</b>
+          <span>{kindName(p.kind)}</span>
+        </div>
+        <span className={`pill ${s.status[0]}`}>{s.status[1]}</span>
+      </div>
+      <div className="lbar">
+        <i style={{ width: `${s.pct}%` }} />
+      </div>
+      <div className="sub num">
+        <span>
+          {fmt(p.engaged)} / {fmt(p.target)} FCFA
+        </span>
+        <span>{s.rest ? `Reste ${fmt(s.rest)}` : "Objectif atteint"}</span>
+      </div>
+    </Link>
   );
 }

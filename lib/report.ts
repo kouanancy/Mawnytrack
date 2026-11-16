@@ -75,9 +75,15 @@ export async function computeReport(userId: string, weekStart: string): Promise<
         from project_disbursements d join projects pr on pr.id = d.project_id and pr.user_id = d.user_id
         where d.user_id = ${userId} and d.occurred_at >= ${lo} and d.occurred_at < ${hi}
         order by d.occurred_at`),
+      db.execute(sql`
+        select m.type, m.amount, m.label, pr.name as project,
+          to_char(m.occurred_at at time zone ${APP_TZ}, 'YYYY-MM-DD') as day
+        from project_moves m join projects pr on pr.id = m.project_id and pr.user_id = m.user_id
+        where m.user_id = ${userId} and m.occurred_at >= ${lo} and m.occurred_at < ${hi}
+        order by m.occurred_at, m.created_at`),
     ]) as unknown as Promise<Rows[]>,
   ]);
-  const [wt, wl, we, wd] = week;
+  const [wt, wl, we, wd, wm] = week;
   const weekNet = new Map(wl.rows.map((r) => [String(r.line_id), n(r.net)]));
   const entries = we.rows.map((r) => ({
     kind: r.kind as Kind,
@@ -139,10 +145,21 @@ export async function computeReport(userId: string, weekStart: string): Promise<
       available: caisse.available,
       outs: wd.rows.map((r) => ({ day: String(r.day), project: String(r.project), label: String(r.label ?? ""), amount: n(r.amount) })),
       projects: caisse.projects
-        .filter((p) => p.engaged < p.target)
+        .filter((p) => !p.closed && p.engaged < p.target)
         .map(({ name, kind, engaged, target }) => ({ name, kind, engaged, target })),
+      // Caisses des projets : mouvements de la semaine et solde de chaque projet en cours
+      projectMoves: wm.rows.map((r) => ({
+        day: String(r.day),
+        project: String(r.project),
+        type: r.type as "fund" | "out" | "back",
+        label: String(r.label ?? ""),
+        amount: n(r.amount),
+      })),
+      projectCash: caisse.projects
+        .filter((p) => p.kind === "project" && !p.closed)
+        .map(({ name, engaged, spent, balance }) => ({ name, allocated: engaged, spent, balance })),
     },
-    hasMovements: entries.length > 0 || wd.rows.length > 0,
+    hasMovements: entries.length > 0 || wd.rows.length > 0 || wm.rows.length > 0,
   };
 }
 

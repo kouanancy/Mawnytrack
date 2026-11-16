@@ -612,3 +612,20 @@ input[type="date"]::-webkit-datetime-edit{padding:0;line-height:42px}
   .rs-panel{border-radius:18px;max-height:80vh;padding:20px;box-shadow:0 16px 48px var(--shadow);animation:pop .16s ease-out}
 }
 @media print{.rs-bg{display:none}}
+
+/* Investissements › caisse propre des éléments de type « Projet » */
+.hero .split.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pj-bal{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none}
+.pj-bal strong{font-family:var(--f-display);font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--in)}
+.pj-bal span{font-size:11px;color:var(--muted)}
+.proj .meta .pill{font-size:11px;padding:2px 8px}
+.proj.closed{opacity:.8}
+.okbox{position:relative;background:var(--in-soft);border-radius:14px;padding:12px 44px 12px 14px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.okbox b{color:var(--in);font-size:15px}
+.okbox span{font-size:13px;color:var(--ink)}
+.okbox .btn{gap:6px}
+.okbox .del{position:absolute;top:6px;right:6px;font-size:20px;color:var(--in)}
+.pj-end{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.sheet .pj-hl td{background:var(--out-soft);font-weight:700}
+.pj-note{margin:0;font-size:12px;color:var(--muted)}
+.phead-bar .del{text-decoration:none}

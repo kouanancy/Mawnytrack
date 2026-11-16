@@ -66,7 +66,16 @@ function Chart({ rows }: { rows: CaisseMonth[] }) {
   );
 }
 
-type Props = { months: CaisseMonth[]; saved: number; unspent: number; invested: number; available: number; ps: PeriodSettings };
+type Props = {
+  months: CaisseMonth[];
+  saved: number;
+  unspent: number;
+  invested: number;
+  /** Alloué aux caisses des projets (approvisionnements − restitutions) */
+  toProjects: number;
+  available: number;
+  ps: PeriodSettings;
+};
 
 type DetailRow = { label: string; value: string; kind?: "total" | "soft" };
 
@@ -111,12 +120,24 @@ function PeriodDetail({ r, ps }: { r: CaisseMonth; ps: PeriodSettings }) {
         </tbody>
       </table>
       <p className="cm-note num">{note}</p>
-      {r.invested > 0 && <p className="cm-note num">Sorties vers les investissements : {fmtNb(r.invested)}</p>}
+      {(r.invested !== 0 || r.toProjects !== 0) && (
+        <p className="cm-note num">
+          {[
+            r.invested ? `Sorties vers les investissements : ${fmtNb(r.invested)}` : "",
+            r.toProjects ? `vers projets ${r.toProjects < 0 ? "−" : ""}${fmtNb(Math.abs(r.toProjects))}` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")
+            .replace(/^vers/, "Vers")}
+        </p>
+      )}
     </>
   );
 }
 
-export function CaisseView({ months, saved, unspent, invested, available, ps }: Props) {
+export function CaisseView({ months, saved, unspent, invested, toProjects, available, ps }: Props) {
+  // Total sorti de la caisse principale : investissements + alloué aux caisses des projets
+  const outTotal = invested + toProjects;
   const recent = [...months].reverse();
   return (
     <div className="cols">
@@ -127,7 +148,7 @@ export function CaisseView({ months, saved, unspent, invested, available, ps }: 
             {fmt(available)}
             <small>FCFA</small>
           </div>
-          <div className="pct">Épargnes supplémentaires cumulées, moins les sorties vers les investissements</div>
+          <div className="pct">Épargnes supplémentaires cumulées, moins les sorties vers les investissements et les projets</div>
           {unspent !== 0 && (
             <div className="pct num">
               dont non dépensé : {unspent < 0 ? "−" : ""}
@@ -141,7 +162,8 @@ export function CaisseView({ months, saved, unspent, invested, available, ps }: 
             </div>
             <div>
               <span>Total investi</span>
-              <strong className="num">{invested ? `−${fmt(invested)}` : "0"}</strong>
+              <strong className="num">{outTotal ? `−${fmt(outTotal)}` : "0"}</strong>
+              {toProjects !== 0 && <small className="num">dont vers projets : {fmt(toProjects)}</small>}
             </div>
           </div>
           <Link className="hero-link" href="/investissements">

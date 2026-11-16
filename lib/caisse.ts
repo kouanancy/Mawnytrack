@@ -11,7 +11,9 @@ import { getPeriodSettings, periodKeySql } from "@/lib/period-server";
 //   soit l'épargne prévue + le non dépensé ;
 // - période en cours : épargne = épargne prévue ; le non dépensé n'est ajouté qu'à la clôture.
 // Disponible en caisse = somme des épargnes, de la première période ayant un revenu à la période en cours,
-// − toutes les sorties vers les investissements (project_disbursements). Tout est recalculé à chaque lecture :
+// − toutes les sorties vers les investissements (project_disbursements)
+// − les approvisionnements des projets + leurs restitutions (project_moves 'fund' / 'back').
+// Les sorties d'un projet ('out') ne touchent que la caisse du projet. Tout est recalculé à chaque lecture :
 // modifier ou supprimer une transaction d'une période terminée met à jour son épargne et la caisse.
 
 export type CaisseMonth = {
@@ -29,6 +31,8 @@ export type CaisseMonth = {
   /** Période terminée (le non dépensé est acquis) */
   closed: boolean;
   invested: number;
+  /** Vers les caisses des projets : approvisionnements − restitutions de la période */
+  toProjects: number;
   /** Caisse cumulée à la fin du mois */
   cum: number;
 };
@@ -38,8 +42,26 @@ export type Project = {
   name: string;
   kind: "investment" | "project";
   target: number;
-  /** Total déjà sorti de la caisse pour ce projet */
+  /** Investissement : total sorti de la caisse ; Projet : alloué (approvisionnements − restitutions) */
   engaged: number;
+  /** Projet : total des sorties de sa caisse */
+  spent: number;
+  /** Projet : total restitué à la caisse principale */
+  back: number;
+  /** Projet : solde de sa caisse (alloué − sorties) */
+  balance: number;
+  /** Projet clôturé (lecture seule) */
+  closed: boolean;
+};
+
+/** Mouvement de la caisse d'un projet. */
+export type ProjectMove = {
+  id: string;
+  type: "fund" | "out" | "back";
+  amount: number;
+  label: string;
+  day: string;
+  time: string;
 };
 
 export type Disbursement = { id: string; amount: number; label: string; day: string; time: string };
@@ -89,6 +111,8 @@ export const caisseAvailableSql = (userId: string, ps: PeriodSettings) => sql`(
   with ${savingsCtes(userId, ps)}
   select coalesce((select sum(saving) from sv), 0)
     - coalesce((select sum(amount) from project_disbursements where user_id = ${userId}), 0)
+    - coalesce((select sum(case type when 'fund' then amount when 'back' then -amount else 0 end)
+        from project_moves where user_id = ${userId}), 0)
 )`;
 
 /** Fige les budgets des périodes terminées de la caisse (comme à leur consultation dans le Budget). */
@@ -112,14 +136,20 @@ export async function getCaisse(userId: string) {
       outm as (
         select ${periodKeySql(sql`occurred_at`, ps)} as m, sum(amount) as s
         from project_disbursements where user_id = ${userId} group by 1
+      ), pjm as (
+        select ${periodKeySql(sql`occurred_at`, ps)} as m,
+          sum(case type when 'fund' then amount when 'back' then -amount else 0 end) as s
+        from project_moves where user_id = ${userId} group by 1
       )
       select to_char(sv.m, 'YYYY-MM') as month, sv.income, sv.planned, sv.net_out, sv.plan_saving, sv.saving, sv.closed,
-        coalesce(outm.s, 0) as invested,
-        sum(sv.saving - coalesce(outm.s, 0)) over (order by sv.m) as cum
-      from sv left join outm on outm.m = sv.m
+        coalesce(outm.s, 0) as invested, coalesce(pjm.s, 0) as to_projects,
+        sum(sv.saving - coalesce(outm.s, 0) - coalesce(pjm.s, 0)) over (order by sv.m) as cum
+      from sv left join outm on outm.m = sv.m left join pjm on pjm.m = sv.m
       order by sv.m`),
     db.execute(sql`
-      select coalesce(sum(amount), 0) as invested from project_disbursements where user_id = ${userId}`),
+      select coalesce((select sum(amount) from project_disbursements where user_id = ${userId}), 0) as invested,
+        coalesce((select sum(case type when 'fund' then amount when 'back' then -amount else 0 end)
+          from project_moves where user_id = ${userId}), 0) as to_projects`),
   ])) as unknown as Rows[];
   const months: CaisseMonth[] = hist.rows.map((r) => ({
     month: String(r.month),
@@ -131,45 +161,70 @@ export async function getCaisse(userId: string) {
     saving: n(r.saving),
     closed: r.closed === true,
     invested: n(r.invested),
+    toProjects: n(r.to_projects),
     cum: n(r.cum),
   }));
   const saved = months.reduce((a, m) => a + m.saving, 0);
   const unspent = months.reduce((a, m) => a + m.unspent, 0);
   const invested = n(tot.rows[0]?.invested);
-  return { months, saved, unspent, invested, available: saved - invested, ps };
+  const toProjects = n(tot.rows[0]?.to_projects);
+  return { months, saved, unspent, invested, toProjects, available: saved - invested - toProjects, ps };
 }
 
-const projectCols = sql`p.id, p.name, p.kind, p.target, coalesce(sum(d.amount), 0) as engaged`;
-const toProject = (r: Row): Project => ({
-  id: String(r.id),
-  name: String(r.name),
-  kind: r.kind as Project["kind"],
-  target: n(r.target),
-  engaged: n(r.engaged),
-});
+/** Colonnes d'un élément : agrégats des sorties (investissement) et des mouvements de caisse (projet). */
+const projectFrom = (userId: string) => sql`
+  projects p
+  left join (
+    select project_id, sum(amount) as s from project_disbursements where user_id = ${userId} group by 1
+  ) d on d.project_id = p.id
+  left join (
+    select project_id,
+      coalesce(sum(amount) filter (where type = 'fund'), 0) as fund,
+      coalesce(sum(amount) filter (where type = 'out'), 0) as spent,
+      coalesce(sum(amount) filter (where type = 'back'), 0) as back
+    from project_moves where user_id = ${userId} group by 1
+  ) m on m.project_id = p.id`;
+const projectCols = sql`p.id, p.name, p.kind, p.target, p.closed_at, coalesce(d.s, 0) as disbursed,
+  coalesce(m.fund, 0) as fund, coalesce(m.spent, 0) as spent, coalesce(m.back, 0) as back`;
 
-/** Investissements et projets avec leur engagé, et disponible en caisse, en un seul lot. */
+const toProject = (r: Row): Project => {
+  const isProject = r.kind === "project";
+  const allocated = n(r.fund) - n(r.back);
+  return {
+    id: String(r.id),
+    name: String(r.name),
+    kind: r.kind as Project["kind"],
+    target: n(r.target),
+    engaged: isProject ? allocated : n(r.disbursed),
+    spent: isProject ? n(r.spent) : 0,
+    back: isProject ? n(r.back) : 0,
+    balance: isProject ? allocated - n(r.spent) : 0,
+    closed: r.closed_at != null,
+  };
+};
+
+/** Investissements et projets avec leurs totaux, et disponible en caisse, en un seul lot. */
 export async function getProjects(userId: string) {
   const [projects, avail] = (await db.batch([
     db.execute(sql`
-      select ${projectCols}
-      from projects p left join project_disbursements d on d.project_id = p.id and d.user_id = p.user_id
+      select ${projectCols} from ${projectFrom(userId)}
       where p.user_id = ${userId}
-      group by p.id
       order by p.created_at`),
     db.execute(sql`select ${caisseAvailableSql(userId, await getPeriodSettings(userId))} as available`),
   ])) as unknown as Rows[];
   return { projects: projects.rows.map(toProject), available: n(avail.rows[0]?.available) };
 }
 
-/** Fiche d'un projet : totaux, sorties (du plus récent au plus ancien) et disponible en caisse. */
+/**
+ * Fiche d'un élément, en un seul lot : totaux, historique et disponible en caisse.
+ * Investissement : sorties de caisse (project_disbursements) ; Projet : mouvements de sa caisse (project_moves).
+ * Historique du plus récent au plus ancien.
+ */
 export async function getProject(userId: string, projectId: string) {
-  const [project, history, avail] = (await db.batch([
+  const [project, history, moves, avail] = (await db.batch([
     db.execute(sql`
-      select ${projectCols}
-      from projects p left join project_disbursements d on d.project_id = p.id and d.user_id = p.user_id
-      where p.user_id = ${userId} and p.id = ${projectId}
-      group by p.id`),
+      select ${projectCols} from ${projectFrom(userId)}
+      where p.user_id = ${userId} and p.id = ${projectId}`),
     db.execute(sql`
       select id, amount, label,
         to_char(occurred_at at time zone ${APP_TZ}, 'YYYY-MM-DD') as day,
@@ -177,6 +232,13 @@ export async function getProject(userId: string, projectId: string) {
       from project_disbursements
       where user_id = ${userId} and project_id = ${projectId}
       order by occurred_at desc, created_at desc`),
+    db.execute(sql`
+      select id, type, amount, label,
+        to_char(occurred_at at time zone ${APP_TZ}, 'YYYY-MM-DD') as day,
+        to_char(occurred_at at time zone ${APP_TZ}, 'HH24:MI') as time
+      from project_moves
+      where user_id = ${userId} and project_id = ${projectId}
+      order by occurred_at desc, created_at desc, id desc`),
     db.execute(sql`select ${caisseAvailableSql(userId, await getPeriodSettings(userId))} as available`),
   ])) as unknown as Rows[];
   const p = project.rows[0];
@@ -184,6 +246,46 @@ export async function getProject(userId: string, projectId: string) {
   return {
     project: toProject(p),
     history: history.rows.map((r) => ({ id: String(r.id), amount: n(r.amount), label: String(r.label ?? ""), day: String(r.day), time: String(r.time) })),
+    moves: moves.rows.map(
+      (r): ProjectMove => ({
+        id: String(r.id),
+        type: r.type as ProjectMove["type"],
+        amount: n(r.amount),
+        label: String(r.label ?? ""),
+        day: String(r.day),
+        time: String(r.time),
+      }),
+    ),
     available: n(avail.rows[0]?.available),
+  };
+}
+
+/** Rapport d'un projet : nom et mouvements de sa caisse, du plus ancien au plus récent (ordre stable). */
+export async function getProjectReport(userId: string, projectId: string) {
+  const [project, moves] = (await db.batch([
+    db.execute(sql`select id, name, kind from projects where user_id = ${userId} and id = ${projectId}`),
+    db.execute(sql`
+      select id, type, amount, label,
+        to_char(occurred_at at time zone ${APP_TZ}, 'YYYY-MM-DD') as day,
+        to_char(occurred_at at time zone ${APP_TZ}, 'HH24:MI') as time
+      from project_moves
+      where user_id = ${userId} and project_id = ${projectId}
+      order by occurred_at, created_at, id`),
+  ])) as unknown as Rows[];
+  const p = project.rows[0];
+  if (!p || p.kind !== "project") return null;
+  return {
+    id: String(p.id),
+    name: String(p.name),
+    moves: moves.rows.map(
+      (r): ProjectMove => ({
+        id: String(r.id),
+        type: r.type as ProjectMove["type"],
+        amount: n(r.amount),
+        label: String(r.label ?? ""),
+        day: String(r.day),
+        time: String(r.time),
+      }),
+    ),
   };
 }
