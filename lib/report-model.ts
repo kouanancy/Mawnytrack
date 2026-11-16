@@ -36,6 +36,9 @@ export type WeeklyReport = {
     available: number;
     outs: { day: string; project: string; label: string; amount: number }[];
     projects: { name: string; kind: "investment" | "project"; engaged: number; target: number }[];
+    /** Caisses des projets (absentes des rapports enregistrés avant leur création) */
+    projectMoves?: { day: string; project: string; type: "fund" | "out" | "back"; label: string; amount: number }[];
+    projectCash?: { name: string; allocated: number; spent: number; balance: number }[];
   };
   hasMovements: boolean;
 };
@@ -87,6 +90,9 @@ export function reportSummary(r: WeeklyReport) {
     other: [
       ["Dettes en cours", fmt(r.debts)],
       ["Disponible en caisse", signed(r.caisse.available)],
+      ...(r.caisse.projectCash?.length
+        ? [["Dans les caisses des projets", fmt(r.caisse.projectCash.reduce((a, p) => a + p.balance, 0))] as [string, string]]
+        : []),
     ] as [string, string][],
   };
 }
@@ -245,6 +251,61 @@ export function reportSections(r: WeeklyReport): Section[] {
       : undefined,
     empty: "Aucune sortie de caisse cette semaine.",
   });
+  if (r.caisse.projectMoves) {
+    const pm = r.caisse.projectMoves;
+    const typeName = { fund: "Approvisionnement", out: "Sortie", back: "Restitution" } as const;
+    sections.push({
+      heading: "Projets · approvisionnements et sorties de la semaine",
+      columns: [
+        { label: "Date", width: 11 },
+        { label: "Projet", width: 25 },
+        { label: "Libellé", width: 32 },
+        { label: "Entrée", width: 16, align: "right" },
+        { label: "Sortie", width: 16, align: "right" },
+      ],
+      rows: pm.map((m) => ({
+        cells: [
+          short(m.day),
+          m.project,
+          `${m.label || typeName[m.type]}${m.type === "back" ? " (restitution)" : ""}`,
+          m.type === "fund" ? fmt(m.amount) : "",
+          m.type === "fund" ? "" : fmt(m.amount),
+        ],
+      })),
+      footer: pm.length
+        ? [
+            {
+              cells: [
+                "Total de la semaine",
+                null,
+                null,
+                fmt(pm.filter((m) => m.type === "fund").reduce((a, m) => a + m.amount, 0)),
+                fmt(pm.filter((m) => m.type !== "fund").reduce((a, m) => a + m.amount, 0)),
+              ],
+              style: "total",
+            },
+          ]
+        : undefined,
+      empty: "Aucun mouvement de projet cette semaine.",
+    });
+  }
+  if (r.caisse.projectCash) {
+    const pc = r.caisse.projectCash;
+    sections.push({
+      heading: "Projets · solde de chaque caisse",
+      columns: [
+        { label: "Projet", width: 40 },
+        { label: "Alloué", width: 20, align: "right" },
+        { label: "Dépensé", width: 20, align: "right" },
+        { label: "Solde", width: 20, align: "right" },
+      ],
+      rows: pc.map((p) => ({ cells: [p.name, fmt(p.allocated), fmt(p.spent), fmt(p.balance)] })),
+      footer: pc.length
+        ? [{ cells: ["Dans les caisses des projets", null, null, fmt(pc.reduce((a, p) => a + p.balance, 0))], style: "total" }]
+        : undefined,
+      empty: "Aucun projet en cours.",
+    });
+  }
   sections.push({
     heading: "Investissements et projets en cours",
     columns: [

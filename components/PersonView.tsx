@@ -8,7 +8,7 @@ import { IcoBack, IcoPrint } from "@/components/Icons";
 import { MoveEditForm, type MoveEdit } from "@/components/MoveEditForm";
 import { useToast } from "@/components/Toast";
 import { fmt, formatInput, parseAmount } from "@/lib/format";
-import { tempId, type MoveCtx } from "@/lib/ledger";
+import { checkMove, tempId, type MoveCtx } from "@/lib/ledger";
 import type { Movement, Person } from "@/lib/loans";
 import { localDayTime } from "@/lib/month";
 
@@ -230,7 +230,7 @@ export function PersonView({ data, today, tz }: { data: State; today: string; tz
                         title={kind}
                         initial={{ amount: h.amount, label: h.label, date: h.day }}
                         today={today}
-                        ctx={() => ctx(h)}
+                        check={(amount) => checkMove(ctx(h), amount)}
                         onCancel={() => setEditing(null)}
                         onSave={(v) => {
                           setEditing(null);

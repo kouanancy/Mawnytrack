@@ -2,27 +2,28 @@
 
 import { useState } from "react";
 import { fmt, formatInput, parseAmount } from "@/lib/format";
-import { checkMove, type MoveCtx } from "@/lib/ledger";
+import type { Check } from "@/lib/ledger";
 
 export type MoveEdit = { amount: number; label: string; date: string };
 
 /**
- * Formulaire de modification d'un mouvement de prêt ou d'emprunt, affiché dans la page à la place de la ligne :
- * Montant, Libellé, Date, « Enregistrer » et « Annuler » (ou Échap). Contrôle pendant la saisie (checkMove) ;
- * ctx(date) donne le contexte de la nouvelle date (budget de la période pour un remboursement d'emprunt).
+ * Formulaire de modification d'un mouvement (prêt, emprunt, remboursement, mouvement de la caisse d'un projet),
+ * affiché dans la page à la place de la ligne : Montant, Libellé, Date, « Enregistrer » et « Annuler » (ou Échap).
+ * check(montant, date) contrôle la saisie pendant la frappe (checkMove pour les prêts, checkProjectMove pour
+ * les projets).
  */
 export function MoveEditForm({
   title,
   initial,
   today,
-  ctx,
+  check: validate,
   onSave,
   onCancel,
 }: {
   title: string;
   initial: MoveEdit;
   today: string;
-  ctx: (date: string) => MoveCtx;
+  check: (amount: number, date: string) => Check;
   onSave: (v: MoveEdit) => void;
   onCancel: () => void;
 }) {
@@ -30,7 +31,7 @@ export function MoveEditForm({
   const [label, setLabel] = useState(initial.label);
   const [date, setDate] = useState(initial.date);
   const amt = parseAmount(amount);
-  const check = checkMove(ctx(date), amt);
+  const check = validate(amt, date);
   const future = date > today && date !== initial.date;
   const ok = check.ok && !!date && !future;
   const unchanged = amt === initial.amount && label.trim() === initial.label && date === initial.date;

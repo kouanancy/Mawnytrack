@@ -5,7 +5,7 @@ import { IcoTrash } from "@/components/Icons";
 import { MoveEditForm, type MoveEdit } from "@/components/MoveEditForm";
 import type { Entry } from "@/lib/data";
 import { fmt } from "@/lib/format";
-import { category, deleteNotice, isMove, isTemp, type MoveCtx } from "@/lib/ledger";
+import { category, checkMove, deleteNotice, isMove, isTemp, type MoveCtx } from "@/lib/ledger";
 import { dayLabel } from "@/lib/month";
 
 /**
@@ -93,7 +93,7 @@ export function Journal({
                       title={category(e)}
                       initial={{ amount: e.amount, label: e.label, date: e.day }}
                       today={today}
-                      ctx={(date) => moveCtx!(e, date)!}
+                      check={(amount, date) => checkMove(moveCtx!(e, date)!, amount)}
                       onCancel={() => setEditing(null)}
                       onSave={(v) => {
                         setEditing(null);

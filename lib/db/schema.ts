@@ -99,12 +99,25 @@ export const projects = pgTable("projects", {
   kind: text("kind", { enum: ["investment", "project"] }).notNull(),
   target: money("target").notNull().default(0),
   createdAt: tstz("created_at").notNull().defaultNow(),
+  closedAt: tstz("closed_at"),
 });
 
 export const projectDisbursements = pgTable("project_disbursements", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: text("user_id").notNull(),
   projectId: uuid("project_id").notNull(),
+  amount: money("amount").notNull(),
+  label: text("label").notNull().default(""),
+  occurredAt: tstz("occurred_at").notNull().defaultNow(),
+  createdAt: tstz("created_at").notNull().defaultNow(),
+});
+
+/** Caisse d'un projet (007) : fund = approvisionnement, out = sortie, back = restitution à la caisse principale */
+export const projectMoves = pgTable("project_moves", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  projectId: uuid("project_id").notNull(),
+  type: text("type", { enum: ["fund", "out", "back"] }).notNull(),
   amount: money("amount").notNull(),
   label: text("label").notNull().default(""),
   occurredAt: tstz("occurred_at").notNull().defaultNow(),
