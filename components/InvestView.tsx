@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOptimistic, useState, useTransition } from "react";
-import { createEventBudget } from "@/app/(app)/investissements/budget-actions";
+import { createBudget } from "@/app/(app)/investissements/budget-actions";
 import { createProject } from "@/app/(app)/investissements/actions";
 import { useToast } from "@/components/Toast";
 import type { Project } from "@/lib/caisse";
-import { eventDateLabel, type EventBudgetSummary } from "@/lib/event-budgets";
+import type { BudgetSummary } from "@/lib/budgets";
 import { fmt, formatInput, parseAmount, plural } from "@/lib/format";
 import { tempId } from "@/lib/ledger";
 import { projectStatus } from "@/lib/project-cash";
@@ -23,25 +23,26 @@ type Filter = "all" | "budgets" | "projects";
 
 /**
  * Module Investissements : projets (caisse propre, approvisionnée depuis la caisse principale) et budgets
- * d'événement (listes indépendantes). Filtre Tout · Budgets · Projets ; résumé du haut selon le filtre.
+ * (listes indépendantes à catégories). Filtre Tout · Budgets · Projets ; résumé du haut selon le filtre.
  */
 export function InvestView({
   projects,
   budgets,
   available,
+  initialFilter = "all",
 }: {
   projects: Project[];
-  budgets: EventBudgetSummary[];
+  budgets: BudgetSummary[];
   available: number;
+  initialFilter?: Filter;
 }) {
   const router = useRouter();
   const [view, add] = useOptimistic(projects, (list: Project[], p: Project) => [...list, p]);
-  const [bview, addBudget] = useOptimistic(budgets, (list: EventBudgetSummary[], b: EventBudgetSummary) => [...list, b]);
+  const [bview, addBudget] = useOptimistic(budgets, (list: BudgetSummary[], b: BudgetSummary) => [...list, b]);
   const [, startTransition] = useTransition();
   const toast = useToast();
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>(initialFilter);
   const [openProject, setOpenProject] = useState(false);
-  const [openBudget, setOpenBudget] = useState(projects.length === 0 && budgets.length === 0);
 
   const showProjects = filter !== "budgets";
   const showBudgets = filter !== "projects";
@@ -71,20 +72,18 @@ export function InvestView({
     });
   }
 
+  /** « Nouveau budget » : le budget s'ajoute à la liste et s'ouvre, nom de la première catégorie prêt à la saisie. */
   function submitBudget(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
-    const f = new FormData(form);
-    const name = String(f.get("name") ?? "").trim();
-    const eventDate = String(f.get("date") ?? "") || null;
+    const name = String(new FormData(form).get("name") ?? "").trim();
     if (!name) return toast("Indiquez un nom");
     form.reset();
     startTransition(async () => {
-      addBudget({ id: tempId(), name, eventDate, count: 0, total: 0 });
-      const r = await createEventBudget({ name, eventDate });
+      addBudget({ id: tempId(), name, categories: 0, items: 0, total: 0 });
+      const r = await createBudget(name);
       if (!r.ok) return toast(r.error);
-      toast(`Budget créé : ${name}`);
-      router.push(`/investissements/budgets/${r.id}`);
+      router.push(`/investissements/budgets/${r.id}?nouveau`);
     });
   }
 
@@ -119,26 +118,6 @@ export function InvestView({
     </details>
   );
 
-  const budgetForm = (
-    <details className="add" open={openBudget} onToggle={(e) => setOpenBudget(e.currentTarget.open)}>
-      <summary>+ Nouveau budget</summary>
-      <form onSubmit={submitBudget}>
-        <div className="field">
-          <label htmlFor="eb-n">Nom</label>
-          <input id="eb-n" name="name" required maxLength={80} placeholder="Ex. Budget fête, anniversaire…" autoComplete="off" />
-        </div>
-        <div className="field">
-          <label htmlFor="eb-d">Date de l&apos;événement (facultative)</label>
-          <input id="eb-d" name="date" type="date" />
-        </div>
-        <p className="hint">Une liste d&apos;articles par catégorie, indépendante de la caisse et du budget du mois.</p>
-        <button className="btn" type="submit">
-          Créer le budget
-        </button>
-      </form>
-    </details>
-  );
-
   return (
     <div className="cols">
       <div className="stack col">
@@ -161,14 +140,14 @@ export function InvestView({
             </div>
           </section>
         ) : filter === "budgets" ? (
-          <section className="hero" aria-label="Budgets d'événement">
-            <div className="lbl">Budgets d&apos;événement</div>
+          <section className="hero" aria-label="Budgets">
+            <div className="lbl">Budgets</div>
             <div className="big num">
               {fmt(budgetsTotal)}
               <small>FCFA prévus</small>
             </div>
             <div className="pct">
-              {bview.length} {plural(bview.length, "budget", "budgets")} · listes indépendantes de la caisse et du budget du mois
+              {bview.length} {plural(bview.length, "budget", "budgets")} · rentrée, travaux, voyage, fête… indépendants de la caisse
             </div>
           </section>
         ) : (
@@ -211,7 +190,6 @@ export function InvestView({
           ))}
         </div>
         {showProjects && projectForm}
-        {showBudgets && budgetForm}
       </div>
       <div className="col">
         {showProjects && (
@@ -246,17 +224,33 @@ export function InvestView({
           <>
             {filter === "all" && (
               <div className="sect">
-                <h2>Budgets d&apos;événement</h2>
+                <h2>Budgets</h2>
                 <span>{bview.length}</span>
               </div>
             )}
             {bview.length ? (
-              bview.map((b) => <BudgetCard key={b.id} b={b} />)
+              <div className="list bud-list">
+                {bview.map((b) => (
+                  <BudgetCard key={b.id} b={b} />
+                ))}
+              </div>
             ) : (
               <div className="list">
-                <div className="empty">Aucun budget d&apos;événement. Créez le premier, par exemple « Budget fête ».</div>
+                <div className="empty">Aucun budget. Créez le premier : rentrée scolaire, travaux, voyage, fête…</div>
               </div>
             )}
+            <form className="quick bud-new" aria-label="Nouveau budget" onSubmit={submitBudget}>
+              <b>Nouveau budget</b>
+              <div className="row" style={{ alignItems: "flex-end" }}>
+                <div className="field" style={{ flex: "3 1 160px" }}>
+                  <label htmlFor="bud-n">Nom</label>
+                  <input id="bud-n" name="name" required maxLength={80} placeholder="Ex. Rentrée scolaire" autoComplete="off" />
+                </div>
+                <button className="btn" type="submit" style={{ flex: "1 0 auto" }}>
+                  Créer
+                </button>
+              </div>
+            </form>
           </>
         )}
       </div>
@@ -294,25 +288,20 @@ function ProjectCard({ p }: { p: Project }) {
   );
 }
 
-/** Carte d'un budget d'événement : nom, date, nombre d'articles et total prévu. */
-function BudgetCard({ b }: { b: EventBudgetSummary }) {
+/** Carte d'un budget : initiale dans un carré vert clair, nom, « X catégories · Y lignes », total à droite. */
+function BudgetCard({ b }: { b: BudgetSummary }) {
   return (
-    <Link className="proj" href={`/investissements/budgets/${b.id}`} aria-disabled={b.id.startsWith("tmp-")}>
-      <div className="pj-top">
-        <div className="meta">
-          <b>{b.name}</b>
-          <span>{b.eventDate ? eventDateLabel(b.eventDate) : "Date non fixée"}</span>
-        </div>
-        <div className="pj-bal">
-          <strong className="num eb-amount">{fmt(b.total)}</strong>
-          <span>Total prévu</span>
-        </div>
-      </div>
-      <div className="sub num">
+    <Link className="item bud-card" href={`/investissements/budgets/${b.id}`} aria-disabled={b.id.startsWith("tmp-")}>
+      <span className="bud-ini" aria-hidden="true">
+        {b.name.trim().slice(0, 1).toUpperCase()}
+      </span>
+      <span className="meta">
+        <b>{b.name}</b>
         <span>
-          Budget d&apos;événement · {b.count} {plural(b.count, "article", "articles")}
+          {b.categories} {plural(b.categories, "catégorie", "catégories")} · {b.items} {plural(b.items, "ligne", "lignes")}
         </span>
-      </div>
+      </span>
+      <span className="amt num">{fmt(b.total)}</span>
     </Link>
   );
 }

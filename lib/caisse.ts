@@ -3,7 +3,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { APP_TZ } from "@/lib/month";
 import type { PeriodSettings } from "@/lib/period";
-import { eventBudgetsQuery, toSummaries } from "@/lib/event-budgets-server";
+import { budgetsQuery, toSummaries } from "@/lib/budgets-server";
 import { currentKeySql, getPeriodSettings, periodKeySql } from "@/lib/period-server";
 
 // Caisse, par période (mois budgétaire), revenus `income` seuls (jamais les emprunts) :
@@ -206,7 +206,7 @@ const toProject = (r: Row): Project => {
 };
 
 /**
- * Projets avec leurs totaux et disponible en caisse, en un seul lot ; withBudgets : budgets d'événement en plus
+ * Projets avec leurs totaux et disponible en caisse, en un seul lot ; withBudgets : budgets en plus
  * (liste du module Investissements).
  */
 export async function getProjects(userId: string, withBudgets = false) {
@@ -216,7 +216,7 @@ export async function getProjects(userId: string, withBudgets = false) {
       where p.user_id = ${userId}
       order by p.created_at`),
     db.execute(sql`select ${caisseAvailableSql(userId, await getPeriodSettings(userId))} as available`),
-    ...(withBudgets ? [eventBudgetsQuery(userId)] : []),
+    ...(withBudgets ? [budgetsQuery(userId)] : []),
   ] as unknown as Parameters<typeof db.batch>[0])) as unknown as Rows[];
   return {
     projects: projects.rows.map(toProject),
