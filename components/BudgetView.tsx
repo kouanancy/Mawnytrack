@@ -362,7 +362,7 @@ export function BudgetView({ data, month, status, endLabel, period, closing }: P
           <div className="lines-grid">{borrowed.map(card)}</div>
         </>
       )}
-      {detail && <RestSheet lines={view.lines} rest={rest} period={period} onClose={closeDetail} onPick={pickLine} />}
+      {detail && <RestSheet data={view} period={period} onClose={closeDetail} onPick={pickLine} />}
     </>
   );
 }

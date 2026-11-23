@@ -16,7 +16,7 @@ import { sortiesFilename } from "@/lib/statement";
 import { Brand } from "@/components/Brand";
 import type { Entry, MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount, plural } from "@/lib/format";
-import { checkExpense, defaultLabel, entryEditCheck, isMove, isExhausted, lineGroups, reduce, stamp, summary, tempId } from "@/lib/ledger";
+import { UNLISTED_INCOME, checkExpense, defaultLabel, entryEditCheck, isMove, isExhausted, lineGroups, reduce, stamp, summary, tempId } from "@/lib/ledger";
 
 type Props = {
   data: MonthData;
@@ -118,7 +118,7 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
     const real = rest + (kind === "income" ? amt : -amt);
     const { day, time } = stamp(month, tz, ps);
     const label =
-      kind === "expense" ? `Rapprochement du ${longDate(today)}` : `Entrée non répertoriée — rapprochement du ${longDate(today)}`;
+      kind === "expense" ? `Rapprochement du ${longDate(today)}` : `${UNLISTED_INCOME} — rapprochement du ${longDate(today)}`;
     const entry: Entry = {
       id: tempId(),
       kind,
