@@ -16,7 +16,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ m
       key={month}
       data={data}
       month={month}
-      monthName={periodName(month)}
+      monthName={periodName(month, ps)}
       monthTitle={periodTitle(month, ps)}
       today={localDayTime(new Date(), APP_TZ).day}
       tz={APP_TZ}

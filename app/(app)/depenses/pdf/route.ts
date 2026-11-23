@@ -3,8 +3,7 @@ import { auth } from "@/lib/auth";
 import { getMonthData } from "@/lib/data";
 import { fmt } from "@/lib/format";
 import { category } from "@/lib/ledger";
-import { monthLabel } from "@/lib/month";
-import { parsePeriod, periodTitle } from "@/lib/period";
+import { parsePeriod, periodName, periodTitle } from "@/lib/period";
 import { getPeriodSettings } from "@/lib/period-server";
 import { pdfResponse, tablePdf } from "@/lib/pdf";
 import { sortiesFilename } from "@/lib/statement";
@@ -44,5 +43,5 @@ export async function GET(req: Request) {
     empty: "Aucune sortie.",
     footer: [{ cells: [`Total ${cur}`, null, null, `${fmt(total)} FCFA`], style: "total" }],
   });
-  return pdfResponse(bytes, sortiesFilename(monthLabel(month), line?.label));
+  return pdfResponse(bytes, sortiesFilename(periodName(month, ps), line?.label));
 }

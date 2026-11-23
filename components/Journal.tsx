@@ -5,7 +5,7 @@ import { IcoTrash } from "@/components/Icons";
 import { MoveEditForm, type MoveEdit } from "@/components/MoveEditForm";
 import type { Entry } from "@/lib/data";
 import { fmt } from "@/lib/format";
-import { category, checkMove, deleteNotice, isMove, isTemp, type MoveCtx } from "@/lib/ledger";
+import { category, deleteNotice, isTemp, type Check } from "@/lib/ledger";
 import { dayLabel } from "@/lib/month";
 
 /**
@@ -18,7 +18,7 @@ export function Journal({
   today,
   empty,
   onDelete,
-  moveCtx,
+  editCheck,
   onEdit,
 }: {
   entries: Entry[];
@@ -26,13 +26,13 @@ export function Journal({
   today: string;
   empty: string;
   onDelete: (id: string) => void;
-  /** Contexte de contrôle d'un mouvement pour une nouvelle date (null : non modifiable) */
-  moveCtx?: (e: Entry, date: string) => MoveCtx | null;
+  /** Contrôle d'une modification (montant, date) ; null : ligne non modifiable */
+  editCheck?: (e: Entry, amount: number, date: string) => Check | null;
   onEdit?: (e: Entry, v: MoveEdit) => void;
 }) {
   const [confirm, setConfirm] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  const editable = (e: Entry) => !!onEdit && !!moveCtx && isMove(e) && !isTemp(e.id) && !!moveCtx(e, e.day);
+  const editable = (e: Entry) => !!onEdit && !!editCheck && !isTemp(e.id) && !!editCheck(e, e.amount, e.day);
 
   if (!entries.length)
     return (
@@ -93,7 +93,7 @@ export function Journal({
                       title={category(e)}
                       initial={{ amount: e.amount, label: e.label, date: e.day }}
                       today={today}
-                      check={(amount, date) => checkMove(moveCtx!(e, date)!, amount)}
+                      check={(amount, date) => editCheck!(e, amount, date) ?? { ok: false, bad: false, hint: "" }}
                       onCancel={() => setEditing(null)}
                       onSave={(v) => {
                         setEditing(null);

@@ -3,7 +3,7 @@
 import type { Direction } from "@/lib/data";
 import type { StatementRow } from "@/lib/loans";
 import { monthLabel } from "@/lib/month";
-import { DEFAULT_PERIOD, periodEnd, periodStart, periodTitle, type PeriodSettings } from "@/lib/period";
+import { DEFAULT_PERIOD, isCalendarPeriod, periodEnd, periodName, periodStart, periodTitle, type PeriodSettings } from "@/lib/period";
 
 export type SRow =
   | { kind: "carry"; date: string; label: string; balance: number }
@@ -79,7 +79,7 @@ export function buildStatement(input: {
     periodLabel = rows.length ? `du ${longDate(rows[0].day)} au ${longDate(today)}` : `au ${longDate(today)}`;
   } else {
     const first = periodStart(period, ps), last = periodEnd(period, ps);
-    const calendar = ps.startDay === 1;
+    const calendar = isCalendarPeriod(period, ps);
     out.push({
       kind: "carry",
       date: shortDate(first),
@@ -99,7 +99,7 @@ export function buildStatement(input: {
     loanLabel,
     rows: out,
     empty: rows.length === 0,
-    filename: `Releve-${fileSlug(name)}-${all ? "tout" : fileSlug(monthLabel(period))}.pdf`,
+    filename: `Releve-${fileSlug(name)}-${all ? "tout" : fileSlug(periodName(period, ps))}.pdf`,
   };
 }
 

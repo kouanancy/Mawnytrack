@@ -628,3 +628,27 @@ input[type="date"]::-webkit-datetime-edit{padding:0;line-height:42px}
 .sheet .pj-hl td{background:var(--out-soft);font-weight:700}
 .pj-note{margin:0;font-size:12px;color:var(--muted)}
 .phead-bar .del{text-decoration:none}
+
+/* Réglages › Dates des mois */
+.set-sub{margin:14px 0 0;font-family:var(--f-display);font-size:16px}
+.pd-list .item{gap:10px}
+.pd-list .meta span{white-space:normal}
+.pd-preview{margin:0;padding:0 0 0 18px;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.pd-preview .self{color:var(--ink);font-weight:600}
+
+/* Budget : dépassement après changement des dates du mois (orange), clôture du mois en cours */
+.bline.over-dates{border-color:var(--out)}
+.pd-close{display:flex;justify-content:flex-end}
+.pd-close .danger-box{width:100%}
+.bl-top .pill{font-size:11px;padding:2px 8px;background:var(--surface-2);color:var(--muted)}
+
+/* Dépenses › Rapprocher avec mon argent réel */
+button.hero-link{width:100%;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
+button.hero-link:focus-visible{outline:2px solid var(--hero-ink);outline-offset:2px}
+.rc{display:flex;flex-direction:column;gap:12px}
+.rc .field{flex:none}
+.rc .hint{margin:0}
+.rc-tbl{margin-top:0;font-size:14px}
+.rc-neg{color:var(--out)!important}
+.rc-pos{color:var(--in)!important}
+.rc-ok{margin:0;padding:10px 12px;border-radius:12px;background:var(--in-soft);color:var(--in);font-weight:700}

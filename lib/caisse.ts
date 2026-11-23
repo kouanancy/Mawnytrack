@@ -119,8 +119,9 @@ export const caisseAvailableSql = (userId: string, ps: PeriodSettings) => sql`(
 function freezePastMonths(userId: string, ps: PeriodSettings) {
   return db.execute(sql`
     with ${monthsCte(userId, ps)}
-    insert into monthly_budgets (user_id, line_id, month, planned)
-    select bl.user_id, bl.id, months.m, bl.planned
+    insert into monthly_budgets (user_id, line_id, month, planned, period_id)
+    select bl.user_id, bl.id, months.m, bl.planned,
+      (select bp.id from budget_periods bp where bp.user_id = ${userId} and bp.month = months.m)
     from months cross join budget_lines bl
     where bl.user_id = ${userId} and months.m < ${periodKeySql(sql`now()`, ps)}
     on conflict (line_id, month) do nothing`);

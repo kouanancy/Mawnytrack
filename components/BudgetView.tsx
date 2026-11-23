@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useOptimistic, useState, useTransition } from "react";
 import { addLine, deleteLine, setPlanned } from "@/app/(app)/actions";
+import { updatePeriod } from "@/app/settings-actions";
 import { IcoTrash } from "@/components/Icons";
 import { RestSheet } from "@/components/RestSheet";
 import { useToast } from "@/components/Toast";
@@ -19,14 +21,19 @@ type Props = {
   endLabel: string;
   /** « novembre 2026 · 22 oct. – 21 nov. » (titre du détail de l'argent restant) */
   period: string;
+  /** Période en cours enregistrée (« Clôturer ce mois ») et date du jour */
+  closing: { id: string; start: string; today: string } | null;
 };
 
-export function BudgetView({ data, month, status, endLabel, period }: Props) {
+export function BudgetView({ data, month, status, endLabel, period, closing }: Props) {
+  const router = useRouter();
   const [view, addOp] = useOptimistic(data, reduce);
   const [, startTransition] = useTransition();
   const toast = useToast();
   const [confirm, setConfirm] = useState<string | null>(null);
-  const [adding, setAdding] = useState(data.lines.length === 0);
+  const [adding, setAdding] = useState(!data.lines.some((l) => !l.system));
+  const [closeAsk, setCloseAsk] = useState(false);
+  const [closeDay, setCloseDay] = useState(closing?.today ?? "");
   const [detail, setDetail] = useState(false);
   const closeDetail = useCallback(() => setDetail(false), []);
 
@@ -94,10 +101,23 @@ export function BudgetView({ data, month, status, endLabel, period }: Props) {
     startTransition(async () => {
       addOp({
         type: "addLine",
-        line: { id: tempId(), label, personId: null, direction: null, planned: p, spent: 0, expense: 0, refund: 0, due: 0, loans: 0, pays: 0 },
+        line: { id: tempId(), label, personId: null, direction: null, planned: p, spent: 0, expense: 0, refund: 0, due: 0, loans: 0, pays: 0, system: false },
       });
       const res = await addLine({ label, planned: p });
       toast(res.ok ? "Ligne ajoutée" : res.error);
+    });
+  }
+
+  /** Clôture du mois en cours à la date choisie : le mois suivant s'ouvre le lendemain (budgets prévus par défaut). */
+  function closeMonth() {
+    if (!closing) return;
+    if (!closeDay || closeDay < closing.start || closeDay > closing.today)
+      return toast("Choisissez une date entre l'ouverture du mois et aujourd'hui");
+    setCloseAsk(false);
+    startTransition(async () => {
+      const r = await updatePeriod({ id: closing.id, start: closing.start, end: closeDay, closing: true });
+      toast(r.ok ? r.message : r.error);
+      if (r.ok) router.refresh();
     });
   }
 
@@ -130,7 +150,8 @@ export function BudgetView({ data, month, status, endLabel, period }: Props) {
         </div>
       );
     const msg = {
-      over: <span className="bad">Plus d&apos;argent sur cette ligne · dépassement de {fmt(-st.rest)}</span>,
+      // Seul un changement des dates du mois peut faire dépasser un budget : signalé en orange, sans blocage
+      over: <span className="warn-t">Dépassement de {fmt(-st.rest)} FCFA après changement des dates</span>,
       empty: <span className="bad">Plus d&apos;argent sur cette ligne</span>,
       low: <span className="warn-t">Reste {fmt(st.rest)}</span>,
       ok: <>Reste {fmt(st.rest)}</>,
@@ -141,13 +162,15 @@ export function BudgetView({ data, month, status, endLabel, period }: Props) {
           <>
             Dépenses liées : {fmt(l.expense)} · Remboursements : {fmt(l.refund)}
           </>
+        ) : l.system ? (
+          <>Écarts de rapprochement et dépenses non classées · sans plafond</>
         ) : (
           <>Aucun montant prévu</>
         ),
     }[st.state];
     const pending = isTemp(l.id);
     return (
-      <div className={`bline ${st.state}`} key={l.id} id={`line-${l.id}`}>
+      <div className={`bline ${st.state === "over" ? "over-dates" : st.state}`} key={l.id} id={`line-${l.id}`}>
         <div className="bl-top">
           <b>{l.label}</b>
           {l.personId ? (
@@ -155,6 +178,9 @@ export function BudgetView({ data, month, status, endLabel, period }: Props) {
             <Link className="bl-link" href={`/prets/${l.personId}`}>
               Fiche ›
             </Link>
+          ) : l.system ? (
+            // Ligne système de rapprochement : ni supprimable ni renommable
+            <span className="pill">Ligne système</span>
           ) : (
             <button
               type="button"
@@ -175,9 +201,9 @@ export function BudgetView({ data, month, status, endLabel, period }: Props) {
               key={`${l.id}-${l.planned}`}
               className="num"
               inputMode="numeric"
-              placeholder="0"
               autoComplete="off"
-              disabled={pending}
+              disabled={pending || l.system}
+              placeholder={l.system ? "Sans plafond" : "0"}
               defaultValue={l.planned ? fmt(l.planned) : ""}
               onInput={(e) => (e.currentTarget.value = formatInput(e.currentTarget.value))}
               onBlur={(e) => plan(l, e.currentTarget)}
@@ -241,10 +267,48 @@ export function BudgetView({ data, month, status, endLabel, period }: Props) {
         )}
       </section>
 
+      {closing && (
+        <div className="pd-close">
+          {closeAsk ? (
+            <div className="danger-box">
+              <p className="hint" style={{ color: "var(--ink)" }}>
+                Le mois se termine à la date choisie ; le mois suivant s&apos;ouvre le lendemain avec les budgets prévus
+                par défaut. Les mouvements datés après la clôture passent au mois suivant.
+              </p>
+              <div className="row" style={{ alignItems: "flex-end", marginTop: 10 }}>
+                <div className="field">
+                  <label htmlFor="close-day">Date de clôture</label>
+                  <input
+                    id="close-day"
+                    type="date"
+                    value={closeDay}
+                    min={closing.start}
+                    max={closing.today}
+                    onChange={(e) => setCloseDay(e.target.value)}
+                  />
+                </div>
+                <div className="confirm" style={{ flexWrap: "wrap" }}>
+                  <button type="button" className="btn sm" onClick={closeMonth} autoFocus>
+                    Confirmer la clôture
+                  </button>
+                  <button type="button" className="btn sm ghost" onClick={() => setCloseAsk(false)}>
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button type="button" className="btn sm ghost" onClick={() => setCloseAsk(true)}>
+              Clôturer ce mois
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="sect">
         <h2>Lignes de budget</h2>
         <span>
-          {budget.length} {plural(budget.length, "ligne", "lignes")}
+          {budget.filter((l) => !l.system).length} {plural(budget.filter((l) => !l.system).length, "ligne", "lignes")}
         </span>
       </div>
       {budget.length ? (
