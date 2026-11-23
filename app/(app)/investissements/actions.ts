@@ -35,14 +35,14 @@ function done(id?: string, balance?: number): ProjectResult {
   return { ok: true, id, balance };
 }
 
-export async function createProject(input: { name: string; kind: string; target: number }): Promise<ProjectResult> {
+/** Nouveau projet (le type « Investissement » n'existe plus depuis la migration 009). */
+export async function createProject(input: { name: string; target: number }): Promise<ProjectResult> {
   const userId = await actionUserId();
   const name = clean(input.name, 80);
   if (!name) return fail("Indiquez un nom.");
-  if (input.kind !== "investment" && input.kind !== "project") return fail("Type invalide.");
   if (!isAmount(input.target)) return fail("Indiquez le montant nécessaire.");
   const res = await db.execute(sql`
-    insert into projects (user_id, name, kind, target) values (${userId}, ${name}, ${input.kind}, ${input.target}::bigint)
+    insert into projects (user_id, name, kind, target) values (${userId}, ${name}, 'project', ${input.target}::bigint)
     returning id`);
   return done(String(rowsOf(res)[0].id));
 }
@@ -82,50 +82,6 @@ export async function setTarget(input: { id: string; target: number }): Promise<
   return fail(
     `Le montant nécessaire ne peut pas être inférieur aux ${fmt(Number(r.engaged))} FCFA déjà ${r.kind === "project" ? "alloués" : "engagés"}.`,
   );
-}
-
-/**
- * Sortie de caisse vers un projet. Règle : jamais plus que le disponible en caisse ni que le reste à
- * financer. Vérifié dans une transaction, sous verrou, au moment de l'insertion.
- */
-export async function addDisbursement(input: { projectId: string; amount: number; label: string }): Promise<ProjectResult> {
-  const userId = await actionUserId();
-  const { projectId, amount } = input;
-  if (!isId(projectId)) return fail("Élément introuvable.");
-  if (!isAmount(amount)) return fail("Saisissez un montant.");
-  const label = clean(input.label, 120) || "Sortie de caisse";
-  const [, res] = await db.batch([
-    lockCaisse(userId),
-    db.execute(sql`
-      with p as (
-        select p.id, p.target, coalesce((select sum(amount) from project_disbursements d
-          where d.project_id = p.id and d.user_id = p.user_id), 0) as engaged
-        from projects p where p.id = ${projectId} and p.user_id = ${userId} and p.kind = 'investment'
-      ), c as (
-        select ${caisseAvailableSql(userId, await getPeriodSettings(userId))} as available
-      ), ins as (
-        insert into project_disbursements (user_id, project_id, amount, label)
-        select ${userId}, p.id, ${amount}::bigint, ${label} from p, c
-        where ${amount}::bigint <= c.available and ${amount}::bigint <= p.target - p.engaged
-        returning id
-      )
-      select p.target - p.engaged as rest, c.available, (select count(*) from ins) as inserted from p, c`),
-  ]);
-  const r = rowsOf(res)[0];
-  if (!r) return fail("Élément introuvable.");
-  if (Number(r.inserted) > 0) return done(projectId);
-  const available = Number(r.available), rest = Number(r.rest);
-  if (available <= 0) return fail("La caisse est vide : aucune sortie possible.");
-  if (amount > available) return fail(`Montant supérieur à la caisse disponible (${fmt(available)} FCFA).`);
-  return fail(`Montant supérieur au reste à financer (${fmt(Math.max(0, rest))} FCFA). Augmentez le montant nécessaire pour continuer.`);
-}
-
-/** Supprime une sortie : le montant revient dans la caisse. */
-export async function deleteDisbursement(id: string): Promise<ProjectResult> {
-  const userId = await actionUserId();
-  if (!isId(id)) return fail("Sortie introuvable.");
-  await db.execute(sql`delete from project_disbursements where id = ${id} and user_id = ${userId}`);
-  return done();
 }
 
 /** Supprime un projet et ses sorties (par cascade) : les montants reviennent dans la caisse. */

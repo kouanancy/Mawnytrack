@@ -24,9 +24,11 @@ export async function GET() {
     q("projects", "created_at"),
     q("project_disbursements", "occurred_at"),
     q("project_moves", "occurred_at, created_at"),
+    q("event_budgets", "created_at"),
+    q("event_budget_items", "budget_id, position"),
     q("weekly_reports", "week_start"),
   ])) as unknown as Rows[];
-  const [user, settings, people, budgetLines, monthlyBudgets, budgetPeriods, transactions, projects, disbursements, projectMoves, reports] = res.map((r) => r.rows);
+  const [user, settings, people, budgetLines, monthlyBudgets, budgetPeriods, transactions, projects, disbursements, projectMoves, eventBudgets, eventItems, reports] = res.map((r) => r.rows);
   const data = {
     application: "Mawnytrack",
     version: pkg.version,
@@ -42,6 +44,8 @@ export async function GET() {
     projects,
     project_disbursements: disbursements,
     project_moves: projectMoves,
+    event_budgets: eventBudgets,
+    event_budget_items: eventItems,
     weekly_reports: reports,
   };
   const day = new Date().toISOString().slice(0, 10);

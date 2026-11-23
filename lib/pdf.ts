@@ -30,6 +30,14 @@ export type TableDoc = {
   subtitle?: string;
   /** Bloc à droite de l'en-tête (ex. nom de la personne, mois) */
   right?: [string, string?];
+  /** Variante : nom en grand puis lignes en petit (budget d'événement) ; remplace `right` */
+  rightLines?: string[];
+  /** Cases grises sous l'en-tête (ex. Articles · Catégories · Total prévu) */
+  boxes?: { label: string; value: string }[];
+  /** Mention en bas à gauche de chaque page (à côté de « Page X / Y ») */
+  footerLeft?: string;
+  /** Ne pas répéter le titre sous l'en-tête */
+  hideTitle?: boolean;
   columns: Column[];
   rows: TableRow[];
   empty?: string;
@@ -131,7 +139,13 @@ export async function documentPdf(doc: MultiDoc): Promise<Uint8Array> {
     page.drawText("Mawny", { x: M + 28, y: y - 16, size: 15, font: bold, color: C.ink });
     page.drawText("track", { x: M + 28 + bold.widthOfTextAtSize("Mawny", 15), y: y - 16, size: 15, font: bold, color: C.accent });
     if (doc.subtitle) page.drawText(safe(regular, doc.subtitle), { x: M, y: y - 36, size: 10, font: regular, color: C.muted });
-    if (doc.right) {
+    if (doc.rightLines?.length) {
+      doc.rightLines.forEach((t, i) => {
+        const f = i === 0 ? bold : regular, size = i === 0 ? 16 : 9;
+        const tt = safe(f, t);
+        page.drawText(tt, { x: M + W - f.widthOfTextAtSize(tt, size), y: y - (i === 0 ? 16 : 18 + i * 13), size, font: f, color: i === 0 ? C.ink : C.muted });
+      });
+    } else if (doc.right) {
       const [a, b] = doc.right;
       const ta = safe(bold, a);
       page.drawText(ta, { x: M + W - bold.widthOfTextAtSize(ta, 12), y: y - 14, size: 12, font: bold, color: C.ink });
@@ -140,12 +154,24 @@ export async function documentPdf(doc: MultiDoc): Promise<Uint8Array> {
         page.drawText(tb, { x: M + W - regular.widthOfTextAtSize(tb, 10), y: y - 30, size: 10, font: regular, color: C.muted });
       }
     }
-    y -= doc.subtitle || doc.right ? 46 : 28;
-    page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: 1.5, color: C.ink });
+    y -= doc.rightLines?.length ? Math.max(46, 24 + doc.rightLines.length * 13) : doc.subtitle || doc.right ? 46 : 28;
+    page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: doc.rightLines ? 2.5 : 1.5, color: C.ink });
     y -= 18;
-    for (const l of wrap(bold, 13, safe(bold, doc.title), W)) {
-      page.drawText(l, { x: M, y, size: 13, font: bold, color: C.ink });
-      y -= 17;
+    if (doc.boxes?.length) {
+      const gap = 8, bw = (W - gap * (doc.boxes.length - 1)) / doc.boxes.length, bh = 42;
+      doc.boxes.forEach((b, i) => {
+        const x = M + i * (bw + gap);
+        page.drawRectangle({ x, y: y - bh + 10, width: bw, height: bh, color: C.soft });
+        page.drawText(safe(bold, b.label.toUpperCase()), { x: x + 10, y: y - 4, size: 7.5, font: bold, color: C.muted });
+        page.drawText(safe(bold, b.value), { x: x + 10, y: y - 22, size: 13, font: bold, color: C.ink });
+      });
+      y -= bh + 6;
+    }
+    if (!doc.hideTitle) {
+      for (const l of wrap(bold, 13, safe(bold, doc.title), W)) {
+        page.drawText(l, { x: M, y, size: 13, font: bold, color: C.ink });
+        y -= 17;
+      }
     }
     y -= 4;
   };
@@ -233,6 +259,7 @@ export async function documentPdf(doc: MultiDoc): Promise<Uint8Array> {
   pages.forEach((p, i) => {
     const t = `Page ${i + 1} / ${pages.length}`;
     p.drawText(t, { x: M + W - regular.widthOfTextAtSize(t, 8), y: M - 14, size: 8, font: regular, color: C.muted });
+    if (doc.footerLeft) p.drawText(safe(regular, doc.footerLeft), { x: M, y: M - 14, size: 8, font: regular, color: C.muted });
   });
   return pdf.save();
 }

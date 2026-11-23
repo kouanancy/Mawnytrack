@@ -264,6 +264,8 @@ export async function resetAccount(input: { word: string; password: string }): P
     db.execute(sql`delete from project_disbursements where user_id = ${userId}`),
     db.execute(sql`delete from project_moves where user_id = ${userId}`),
     db.execute(sql`delete from projects where user_id = ${userId}`),
+    db.execute(sql`delete from event_budget_items where user_id = ${userId}`),
+    db.execute(sql`delete from event_budgets where user_id = ${userId}`),
     db.execute(sql`delete from monthly_budgets where user_id = ${userId}`),
     // Périodes et ligne système recréées à la consultation suivante (réglage par défaut, ligne vide)
     db.execute(sql`delete from budget_periods where user_id = ${userId}`),

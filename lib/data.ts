@@ -30,6 +30,9 @@ export type Line = {
   pays: number;
   /** Ligne système « Dépenses non répertoriées » (ni supprimable ni renommable, sans plafond) */
   system: boolean;
+  /** Dernière dépense sur la ligne (ISO) et nombre de dépenses des 30 derniers jours : ordre des suggestions */
+  lastUsed: string | null;
+  recentUses: number;
 };
 
 export type Entry = {
@@ -99,6 +102,13 @@ function linesQuery(userId: string, month: string, ps: PeriodSettings) {
       join people p on p.id = bl.person_id and p.user_id = bl.user_id and p.direction = 'lent'
       where t.user_id = ${userId}
       group by t.line_id
+    ), u as (
+      -- Usage récent de chaque ligne (saisie des dépenses : lignes les plus utilisées en premier)
+      select line_id, max(occurred_at) as last_used,
+        count(*) filter (where occurred_at > now() - interval '30 days') as recent
+      from transactions
+      where user_id = ${userId} and kind = 'expense' and line_id is not null
+      group by line_id
     ), d as (
       select t.person_id,
         coalesce(sum(t.amount) filter (where (p.direction = 'lent' and t.kind = 'expense') or (p.direction = 'borrowed' and t.kind = 'borrow')), 0) as loans,
@@ -118,13 +128,15 @@ function linesQuery(userId: string, month: string, ps: PeriodSettings) {
       case when p.direction = 'lent' then greatest(coalesce(a.spent, 0), 0) else greatest(coalesce(s.spent, 0), 0) end as spent,
       case when p.direction = 'lent' then coalesce(a.expense, 0) else coalesce(s.expense, 0) end as expense,
       case when p.direction = 'lent' then coalesce(a.refund, 0) else coalesce(s.refund, 0) end as refund,
-      greatest(coalesce(d.due, 0), 0) as due, coalesce(d.loans, 0) as loans, coalesce(d.pays, 0) as pays
+      greatest(coalesce(d.due, 0), 0) as due, coalesce(d.loans, 0) as loans, coalesce(d.pays, 0) as pays,
+      u.last_used, coalesce(u.recent, 0) as recent
     from budget_lines bl
     left join people p on p.id = bl.person_id and p.user_id = bl.user_id
     left join monthly_budgets mb on mb.line_id = bl.id and mb.month = (${start})::date
     left join s on s.line_id = bl.id
     left join a on a.line_id = bl.id
     left join d on d.person_id = bl.person_id
+    left join u on u.line_id = bl.id
     where bl.user_id = ${userId}
     -- La ligne système « Dépenses non répertoriées » toujours en dernier
     order by bl.system is not null, bl.position, bl.created_at`);
@@ -185,6 +197,8 @@ function toLine(r: Record<string, unknown>): Line {
     loans: n(r.loans),
     pays: n(r.pays),
     system: r.system === true,
+    lastUsed: r.last_used ? new Date(r.last_used as string).toISOString() : null,
+    recentUses: n(r.recent),
   };
 }
 

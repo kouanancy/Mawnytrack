@@ -9,7 +9,7 @@ import { currentPeriod, periodStart, type PeriodSettings } from "@/lib/period";
 import { getPeriodSettings, periodBounds, periodKeySql } from "@/lib/period-server";
 import { actionUserId } from "@/lib/session";
 
-export type ActionResult = { ok: true } | { ok: false; error: string };
+export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_AMOUNT = 1_000_000_000_000;
@@ -162,11 +162,14 @@ export async function addLine(input: { label: string; planned: number }): Promis
   if (!label) return fail("Indiquez un nom de ligne.");
   const planned = input.planned === 0 ? 0 : input.planned;
   if (planned !== 0 && !isAmount(planned)) return fail("Budget prévu invalide.");
-  await db.execute(sql`
+  const res = await db.execute(sql`
     insert into budget_lines (user_id, label, planned, position)
     select ${userId}, ${label}, ${planned}::bigint, coalesce(max(position), 0) + 1
-    from budget_lines where user_id = ${userId}`);
-  return done();
+    from budget_lines where user_id = ${userId}
+    returning id`);
+  revalidatePath("/", "layout");
+  // Identifiant renvoyé : la ligne créée depuis la saisie des dépenses est aussitôt choisie
+  return { ok: true, id: String(rowsOf(res)[0].id) };
 }
 
 /** Retire une ligne ; ses dépenses restent dans le journal (line_id passe à NULL). */
