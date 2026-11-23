@@ -601,9 +601,6 @@ input[type="date"]::-webkit-datetime-edit{padding:0;line-height:42px}
 .rs-total th,.rs-total td{font-weight:800;border-top:2px solid var(--line);text-align:right}
 .rs-total td{color:var(--in)}
 .rs-empty{margin:8px 0;color:var(--muted)}
-.rs-recap{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:13px;text-align:right}
-.rs-recap p{margin:0 0 4px;color:var(--muted)}
-.rs-recap b{color:var(--ink)}
 @keyframes rs-up{from{transform:translateY(100%)}to{transform:none}}
 @keyframes rs-fade{from{opacity:0}to{opacity:1}}
 @media (max-width:767px){.rs-tbl{font-size:13px}.rs-tbl th,.rs-tbl td{padding:8px 4px}}
@@ -652,3 +649,9 @@ button.hero-link:focus-visible{outline:2px solid var(--hero-ink);outline-offset:
 .rc-neg{color:var(--out)!important}
 .rc-pos{color:var(--in)!important}
 .rc-ok{margin:0;padding:10px 12px;border-radius:12px;background:var(--in-soft);color:var(--in);font-weight:700}
+
+/* Reste par ligne : détail de ce qui complète l'argent restant */
+.rs-recap-tbl{width:100%;border-collapse:collapse;margin-top:10px;border-top:1px solid var(--line);font-size:13px}
+.rs-recap-tbl th{text-align:left;font-weight:400;color:var(--muted);padding:6px 6px 2px 0}
+.rs-recap-tbl td{text-align:right;white-space:nowrap;color:var(--muted);padding:6px 0 2px}
+.rs-recap-tbl .rs-recap-end th,.rs-recap-tbl .rs-recap-end td{color:var(--ink);font-weight:700;padding-top:8px}

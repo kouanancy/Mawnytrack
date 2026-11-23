@@ -116,8 +116,12 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   l'extérieur ; focus gardé dans le panneau). Titre + période (« novembre 2026 · 22 oct. – 21 nov. »), tableau
   Ligne · Prévu · Dépensé · Reste des lignes au budget prévu > 0 dont le reste est positif, groupées comme le
   Budget (groupe vide masqué), triées du plus grand reste au plus petit ; « Total restant sur les lignes » ; sinon
-  « Toutes les lignes sont entièrement dépensées. ». Si l'argent restant diffère du total : « Revenus non affectés
-  à une ligne : X FCFA » (ou « Part des restes non couverte par les revenus ») puis « Argent restant : Y FCFA ».
+  « Toutes les lignes sont entièrement dépensées. ». Sous le total, détail de ce qui complète l'argent restant
+  (`restBreakdown` dans `lib/ledger.ts`), une ligne par élément non nul, signé : « Revenus non affectés à une ligne »
+  (ou « Part des restes non couverte par les revenus » si négatif), « Emprunts reçus », « Dépenses sans plafond »
+  (lignes à budget 0, hors ligne système), « Rapprochements (entrées − dépenses non répertoriées) » (revenus dont le
+  libellé commence par « Entrée non répertoriée », `UNLISTED_INCOME`, moins la ligne système), puis « Argent
+  restant : Y FCFA ». Par construction, total + détail = argent restant de la synthèse.
   Calculé depuis les données déjà chargées (mêmes chiffres que `lineState`, aucune requête de plus). Un appui sur
   une ligne ferme le panneau et fait défiler jusqu'à la carte `#line-<id>`, signalée brièvement (`.flash`).
 

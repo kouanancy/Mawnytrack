@@ -3,6 +3,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { APP_TZ } from "@/lib/month";
 import { currentPeriod, type PeriodSettings } from "@/lib/period";
+import { UNLISTED_INCOME } from "@/lib/ledger";
 import { getPeriodSettings, periodBounds } from "@/lib/period-server";
 
 // Toutes les lectures d'un écran partent en un seul lot (db.batch = un aller-retour HTTP,
@@ -47,7 +48,14 @@ export type Entry = {
   at: string;
 };
 
-export type Totals = { income: number; borrow: number; expense: number; refund: number };
+export type Totals = {
+  income: number;
+  borrow: number;
+  expense: number;
+  refund: number;
+  /** Dont entrées non répertoriées (revenus de rapprochement, libellé UNLISTED_INCOME) */
+  unlistedIncome?: number;
+};
 
 export type MonthData = {
   lines: Line[];
@@ -129,7 +137,8 @@ function totalsQuery(userId: string, month: string, ps: PeriodSettings) {
       coalesce(sum(amount) filter (where kind = 'income'), 0) as income,
       coalesce(sum(amount) filter (where kind = 'borrow'), 0) as borrow,
       coalesce(sum(amount) filter (where kind = 'expense'), 0) as expense,
-      coalesce(sum(amount) filter (where kind = 'refund'), 0) as refund
+      coalesce(sum(amount) filter (where kind = 'refund'), 0) as refund,
+      coalesce(sum(amount) filter (where kind = 'income' and label like ${UNLISTED_INCOME + "%"}), 0) as unlisted_income
     from transactions
     where user_id = ${userId} and occurred_at >= ${lo} and occurred_at < ${hi}`);
 }
@@ -217,7 +226,13 @@ export async function getMonthData(userId: string, month: string, journal: Kind[
   const t = totals.rows[0] ?? {};
   return {
     lines: lines.rows.map(toLine),
-    totals: { income: n(t.income), borrow: n(t.borrow), expense: n(t.expense), refund: n(t.refund) },
+    totals: {
+      income: n(t.income),
+      borrow: n(t.borrow),
+      expense: n(t.expense),
+      refund: n(t.refund),
+      unlistedIncome: n(t.unlisted_income),
+    },
     debts: n(debts.rows[0]?.debts),
     entries: entries ? entries.rows.map(toEntry) : [],
   };

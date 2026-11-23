@@ -5,6 +5,9 @@ import { fmt } from "@/lib/format";
 import { localDayTime } from "@/lib/month";
 import { dayInPeriod, periodOf, periodTitle, type PeriodSettings } from "@/lib/period";
 
+/** Début du libellé d'une entrée non répertoriée (revenu de rapprochement). */
+export const UNLISTED_INCOME = "Entrée non répertoriée";
+
 export type LineStatus = "free" | "over" | "empty" | "low" | "ok";
 
 export function lineState(l: Line) {
@@ -308,4 +311,27 @@ export function entryEditCheck(data: MonthData, e: Entry, amount: number, date: 
   const simple = e.kind === "income" || (e.kind === "expense" && data.lines.some((l) => l.id === e.lineId && l.system));
   if (!simple) return null;
   return amount > 0 ? { ok: true, bad: false, hint: "" } : { ok: false, bad: false, hint: "" };
+}
+
+/**
+ * Détail de l'« Argent restant » (panneau « Reste par ligne ») : total des restes des lignes à budget prévu > 0
+ * (reste positif), puis ce qui complète l'argent restant, un élément par ligne :
+ * - emprunts reçus ;
+ * - dépenses sans plafond (lignes à budget 0, hors ligne système), à déduire ;
+ * - rapprochements : entrées non répertoriées − dépenses de la ligne « Dépenses non répertoriées » ;
+ * - revenus non affectés à une ligne : le reste (négatif si les restes dépassent les revenus).
+ * Par construction, total + somme des éléments = argent restant.
+ */
+export function restBreakdown(data: MonthData) {
+  const { rest } = summary(data.totals);
+  const total = data.lines.reduce((a, l) => {
+    const r = l.planned - l.spent;
+    return a + (l.planned > 0 && r > 0 ? r : 0);
+  }, 0);
+  const borrow = data.totals.borrow;
+  const uncapped = data.lines.filter((l) => !l.planned && !l.system).reduce((a, l) => a + l.spent, 0);
+  const sys = data.lines.filter((l) => l.system).reduce((a, l) => a + l.spent, 0);
+  const reconcile = (data.totals.unlistedIncome ?? 0) - sys;
+  const unassigned = rest - total - borrow + uncapped - reconcile;
+  return { rest, total, unassigned, borrow, uncapped, reconcile };
 }
