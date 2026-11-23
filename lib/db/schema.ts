@@ -92,7 +92,8 @@ export const budgetPeriods = pgTable("budget_periods", {
   month: date("month", { mode: "string" }).notNull(),
   name: text("name"),
   startDate: date("start_date", { mode: "string" }).notNull(),
-  endDate: date("end_date", { mode: "string" }).notNull(),
+  /** NULL : mois en cours, ouvert jusqu'à sa clôture (010) */
+  endDate: date("end_date", { mode: "string" }),
   closedAt: tstz("closed_at"),
   createdAt: tstz("created_at").notNull().defaultNow(),
 });

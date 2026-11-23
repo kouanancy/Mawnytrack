@@ -6,7 +6,7 @@ import { Journal } from "@/components/Journal";
 import type { MoveEdit } from "@/components/MoveEditForm";
 import { updateMove } from "@/app/(app)/prets/actions";
 import { useToast } from "@/components/Toast";
-import { periodOf, type PeriodSettings } from "@/lib/period";
+import { currentPeriod, periodName, periodOf, periodStatus, type PeriodSettings } from "@/lib/period";
 import type { Entry, MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount } from "@/lib/format";
 import { entryEditCheck, isMove, reduce, stamp, summary, tempId } from "@/lib/ledger";
@@ -85,6 +85,12 @@ export function RevenusView({ data, month, today, tz, ps }: { data: MonthData; m
             <strong className="num">{fmt(rest)}</strong>
           </div>
         </div>
+        {periodStatus(month, ps) === "future" ? (
+          // Mois prévu : pas de saisie avant la clôture du mois en cours
+          <div className="quick future-note" role="note">
+            <p>Ce mois s&apos;ouvrira à la clôture de {periodName(currentPeriod(ps), ps)}.</p>
+          </div>
+        ) : (
         <form className="quick" aria-label="Ajouter un revenu" onSubmit={submit}>
           <div className="row">
             <div className="field amount">
@@ -116,6 +122,7 @@ export function RevenusView({ data, month, today, tz, ps }: { data: MonthData; m
             Ajouter le revenu
           </button>
         </form>
+        )}
       </div>
       <div className="col">
         <div className="sect">

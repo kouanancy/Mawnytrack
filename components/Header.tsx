@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { closeMonth, reopenMonth } from "@/app/month-actions";
 import { Brand } from "@/components/Brand";
-import { IcoBack, IcoCheck, IcoChev, IcoMenu } from "@/components/Icons";
-import { shiftMonth } from "@/lib/month";
-import { periodName, periodRange, type PeriodSettings } from "@/lib/period";
+import { IcoBack, IcoCheck, IcoChev, IcoLock, IcoMenu } from "@/components/Icons";
+import { useToast } from "@/components/Toast";
+import { addDays, localDayTime, monthLabel, shiftMonth } from "@/lib/month";
+import { longDate, periodName, periodRange, periodStart, type PeriodSettings } from "@/lib/period";
 import { SECTIONS, SETTINGS } from "@/lib/sections";
 import { useNav } from "@/lib/use-nav";
 
@@ -18,6 +21,38 @@ export function Header({ current, ps }: { current: string; ps: PeriodSettings })
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
+  const router = useRouter();
+  const toast = useToast();
+  const [ask, setAsk] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const today = localDayTime(new Date(), "Africa/Abidjan").day;
+  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+  // Bouton « Clôturer » : uniquement sur le mois en cours, dans les sections à sélecteur de mois
+  // (pas le jour même d'une clôture : le nouveau mois ne s'ouvre que le lendemain)
+  const canClose = section.month && pathname === section.href && month === current && periodStart(current, ps) <= today;
+
+  /** Clôture du mois en cours aujourd'hui ; le sélecteur passe sur le nouveau mois, « Annuler » pendant 6 secondes. */
+  function close() {
+    setAsk(false);
+    startTransition(async () => {
+      const r = await closeMonth(current);
+      if (!r.ok) return toast(r.error);
+      router.push(pathname, { scroll: false });
+      router.refresh();
+      toast(r.message, {
+        duration: 6000,
+        action: {
+          label: "Annuler",
+          onClick: () =>
+            startTransition(async () => {
+              const u = await reopenMonth(r.closed);
+              toast(u.ok ? u.message : u.error);
+              if (u.ok) router.refresh();
+            }),
+        },
+      });
+    });
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -94,6 +129,7 @@ export function Header({ current, ps }: { current: string; ps: PeriodSettings })
         </div>
         {/* Sélecteur de mois sur la page principale de la section (pas sur une fiche ni un relevé) */}
         {section.month && pathname === section.href && (
+          <div className="month-bar">
           <div className="month">
             <Link href={withMonth(pathname, shiftMonth(month, -1))} aria-label="Mois précédent" scroll={false}>
               <IcoBack />
@@ -106,8 +142,40 @@ export function Header({ current, ps }: { current: string; ps: PeriodSettings })
               <IcoChev />
             </Link>
           </div>
+          {canClose && (
+            <button
+              type="button"
+              className="close-btn"
+              aria-expanded={ask}
+              disabled={pending}
+              onClick={() => setAsk((a) => !a)}
+            >
+              <IcoLock /> Clôturer
+            </button>
+          )}
+          </div>
         )}
       </header>
+      {canClose && ask && (
+        <div className="close-box" role="dialog" aria-label="Clôturer le mois">
+          <p>
+            <b>
+              Clôturer {cap(periodName(current, ps))} aujourd&apos;hui, {longDate(today)} ?
+            </b>
+          </p>
+          <p>
+            {cap(monthLabel(shiftMonth(current, 1)))} commencera demain, le {longDate(addDays(today, 1))}, avec les budgets prévus.
+          </p>
+          <div className="confirm">
+            <button type="button" className="btn sm out" autoFocus disabled={pending} onClick={close}>
+              Clôturer
+            </button>
+            <button type="button" className="btn sm ghost" onClick={() => setAsk(false)}>
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
       <h1 className="section-title">{section.name}</h1>
     </div>
   );

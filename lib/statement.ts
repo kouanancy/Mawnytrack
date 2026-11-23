@@ -88,7 +88,8 @@ export function buildStatement(input: {
     });
     out.push(...rows.map(move));
     out.push({ kind: "total", label: calendar ? "Total du mois" : "Total de la période", loan: tl, pay: tp });
-    out.push({ kind: "end", label: `Reste dû au ${longDate(last)}`, balance: rows.at(-1)?.balance ?? before });
+    // Mois en cours (ouvert) : reste dû à ce jour
+    out.push({ kind: "end", label: `Reste dû au ${longDate(last ?? today)}`, balance: rows.at(-1)?.balance ?? before });
     periodLabel = cap(periodTitle(period, ps));
   }
 

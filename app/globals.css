@@ -626,17 +626,9 @@ input[type="date"]::-webkit-datetime-edit{padding:0;line-height:42px}
 .pj-note{margin:0;font-size:12px;color:var(--muted)}
 .phead-bar .del{text-decoration:none}
 
-/* Réglages › Dates des mois */
-.set-sub{margin:14px 0 0;font-family:var(--f-display);font-size:16px}
-.pd-list .item{gap:10px}
-.pd-list .meta span{white-space:normal}
-.pd-preview{margin:0;padding:0 0 0 18px;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
-.pd-preview .self{color:var(--ink);font-weight:600}
 
-/* Budget : dépassement après changement des dates du mois (orange), clôture du mois en cours */
+/* Budget : dépassement sur un mois clôturé (orange) */
 .bline.over-dates{border-color:var(--out)}
-.pd-close{display:flex;justify-content:flex-end}
-.pd-close .danger-box{width:100%}
 .bl-top .pill{font-size:11px;padding:2px 8px;background:var(--surface-2);color:var(--muted)}
 
 /* Dépenses › Rapprocher avec mon argent réel */
@@ -694,3 +686,17 @@ button.hero-link:focus-visible{outline:2px solid var(--hero-ink);outline-offset:
 .combo-create{align-self:flex-start;min-height:44px;border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:700;cursor:pointer;text-align:left}
 .combo-create:hover{text-decoration:underline}
 details.add form > .field{flex:none}
+.future-note p{margin:0;color:var(--muted);font-weight:600}
+
+/* Barre du mois : sélecteur et bouton « Clôturer » (mois en cours) ; confirmation dessous */
+.month-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center}
+.close-btn{display:inline-flex;align-items:center;gap:6px;height:42px;padding:0 14px;border:1.5px solid var(--out);border-radius:999px;background:var(--surface);color:var(--out);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.close-btn:hover{background:var(--out-soft)}
+.close-btn[aria-expanded="true"]{background:var(--out-soft)}
+.close-btn:focus-visible{outline:2px solid var(--out);outline-offset:2px}
+.close-box{background:var(--out-soft);border:1px solid var(--out);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.close-box p{margin:0;font-size:14px;color:var(--ink)}
+.close-box .confirm{margin-top:6px}
+.toast-act{flex:none;border:0;background:none;color:inherit;font:inherit;font-weight:800;text-decoration:underline;cursor:pointer;padding:4px}
+.page-head .close-box{flex:1 0 100%;order:3}
+.toast{width:max-content;max-width:min(460px, calc(100vw - 32px))}

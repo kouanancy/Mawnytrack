@@ -3,17 +3,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { cache } from "react";
 import { db } from "@/lib/db";
 import { APP_TZ, addDays, localDayTime, shiftMonth } from "@/lib/month";
-import {
-  chainEdges,
-  chainEnd,
-  defaultEnd,
-  defaultKeyOf,
-  defaultStart,
-  periodDates,
-  type PeriodNaming,
-  type PeriodSettings,
-  type StoredPeriod,
-} from "@/lib/period";
+import { keyForOpening, openPeriod, periodDates, type PeriodSettings, type StoredPeriod } from "@/lib/period";
 
 type Row = Record<string, unknown>;
 
@@ -31,50 +21,40 @@ const toPeriod = (r: Row): StoredPeriod => ({
   key: String(r.key),
   name: (r.name as string) ?? null,
   start: String(r.start),
-  end: String(r.end),
+  end: (r.end as string) ?? null,
   closed: r.closed === true,
 });
 
 /**
- * Réglage du mois budgétaire et périodes enregistrées (une lecture par requête). Garantit au passage :
- * - des périodes jusqu'à aujourd'hui : sans action, une nouvelle période s'ouvre le lendemain de la clôture de
- *   la précédente, jusqu'à la date proposée par le réglage par défaut (chainEnd) ;
+ * Mois enregistrés (une lecture par requête). Garantit au passage :
+ * - un mois en cours ouvert : nouvel utilisateur ou « Tout réinitialiser » → mois ouvert aujourd'hui (nom selon
+ *   l'ouverture : le 15 ou après → mois suivant) ; dernier mois clôturé sans successeur → mois suivant ouvert le
+ *   lendemain de sa clôture ;
  * - la ligne système « Dépenses non répertoriées ».
  */
 export const getPeriodSettings = cache(async (userId: string): Promise<PeriodSettings> => {
-  const [settings, periods, sys] = (await db.batch([
-    db.execute(sql`select start_day, period_naming from user_settings where user_id = ${userId}`),
+  const [periods, sys] = (await db.batch([
     periodsQuery(userId),
     db.execute(sql`select exists (select 1 from budget_lines where user_id = ${userId} and system = 'unlisted') as ok`),
   ])) as unknown as { rows: Row[] }[];
-  const st = settings.rows[0];
-  const base = {
-    startDay: st ? Number(st.start_day) : 1,
-    naming: ((st?.period_naming as PeriodNaming) ?? "end") as PeriodNaming,
-  };
   let list = periods.rows.map(toPeriod);
 
+  const last = list[list.length - 1];
   const today = localDayTime(new Date(), APP_TZ).day;
-  const missing: { key: string; start: string; end: string }[] = [];
-  if (!list.length) {
-    const key = defaultKeyOf(today, base);
-    missing.push({ key, start: defaultStart(key, base), end: defaultEnd(key, base) });
-  } else {
-    let last = list[list.length - 1];
-    while (last.end < today && missing.length < 240) {
-      const start = addDays(last.end, 1);
-      const next = { key: shiftMonth(last.key, 1), start, end: chainEnd(start, base) };
-      missing.push(next);
-      last = { ...last, ...next };
-    }
-  }
+  const open = !last
+    ? { key: keyForOpening(today), start: today }
+    : last.end !== null
+      ? { key: shiftMonth(last.key, 1), start: addDays(last.end, 1) }
+      : null;
   const writes = [
-    ...missing.map((p) =>
-      db.execute(sql`
-        insert into budget_periods (user_id, month, start_date, end_date)
-        values (${userId}, (${p.key + "-01"})::date, (${p.start})::date, (${p.end})::date)
-        on conflict (user_id, month) do nothing`),
-    ),
+    ...(open
+      ? [
+          db.execute(sql`
+            insert into budget_periods (user_id, month, start_date)
+            values (${userId}, (${open.key + "-01"})::date, (${open.start})::date)
+            on conflict (user_id) where end_date is null do nothing`),
+        ]
+      : []),
     ...(sys.rows[0]?.ok
       ? []
       : [
@@ -91,7 +71,7 @@ export const getPeriodSettings = cache(async (userId: string): Promise<PeriodSet
     }[];
     list = res[res.length - 1].rows.map(toPeriod);
   }
-  return { ...base, periods: list };
+  return { periods: list };
 });
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -102,41 +82,43 @@ const lit = (d: string) => {
 };
 
 /**
- * Bornes SQL [lo, hi[ d'une période dans le fuseau de l'application, et sa clé sous forme de date
- * (`start`, 1er jour du mois de la clé) pour monthly_budgets.month.
+ * Bornes SQL [lo, hi[ d'un mois dans le fuseau de l'application (sans borne haute pour le mois en cours, ouvert),
+ * et sa clé sous forme de date (`start`, 1er jour du mois de la clé) pour monthly_budgets.month.
  */
 export function periodBounds(key: string, s: PeriodSettings) {
   const { start, end } = periodDates(key, s);
   return {
     start: `${key}-01`,
     lo: sql`(${lit(start)})::timestamp at time zone ${APP_TZ}`,
-    hi: sql`(${lit(addDays(end, 1))})::timestamp at time zone ${APP_TZ}`,
+    hi: end === null ? sql`'infinity'::timestamptz` : sql`(${lit(addDays(end, 1))})::timestamp at time zone ${APP_TZ}`,
   };
 }
 
+/** Clé du mois en cours sous forme de date SQL (1er jour du mois de la clé). */
+export const currentKeySql = (s: PeriodSettings) => {
+  const o = openPeriod(s);
+  return o ? lit(`${o.key}-01`) : sql`date_trunc('month', (now() at time zone ${APP_TZ})::date)::date`;
+};
+
 /**
- * Clé (1er jour du mois de la clé, type date) de la période contenant un instant, calculée en SQL : même règle
- * que periodOf. Périodes enregistrées : leurs dates (CASE) ; avant la première ou après la dernière : prolongement
- * de la chaîne (période voisine, puis réglage par défaut : mois de la date « startDay » + écart constant).
+ * Clé (1er jour du mois de la clé, type date) du mois contenant un instant, calculée en SQL : même règle que
+ * periodOf. Mois enregistrés : leurs dates (CASE) ; à partir de l'ouverture du mois en cours : le mois en cours ;
+ * avant le premier mois : de mois en mois, même jour du mois que son ouverture (intervalles de mois bornés comme
+ * addMonths).
  */
 export function periodKeySql(col: SQL, s: PeriodSettings): SQL {
-  // Entiers validés (1 à 28) écrits en littéraux : pas d'ambiguïté de type sur « paramètre × interval »
-  const back = sql.raw(String(Math.trunc(Number(s.startDay)) - 1));
   const day = sql`(${col} at time zone ${APP_TZ})::date`;
-  const sdMonth = sql`date_trunc('month', ${day} - ${back})`;
-  const plus = (n: number) => sql.raw(`interval '${Math.trunc(n)} month'`);
-  const keyLit = (k: string) => lit(`${k}-01`);
-  if (!s.periods.length) {
-    const shift = s.naming === "end" && s.startDay > 1 ? 1 : 0;
-    return sql`(${sdMonth} + ${plus(shift)})::date`;
-  }
-  const e = chainEdges(s);
-  const branches = s.periods.map((p) => sql`when ${day} <= ${lit(p.end)} then ${keyLit(p.key)}`);
+  const first = s.periods[0], last = openPeriod(s);
+  if (!first || !last) return sql`date_trunc('month', ${day})::date`;
+  const fs = lit(first.start);
+  const fk = lit(`${first.key}-01`);
+  // Écart en mois entre l'ouverture du premier mois et le jour, puis ajustement selon le jour du mois
+  const k = sql`((extract(year from ${fs})::int * 12 + extract(month from ${fs})::int) - (extract(year from ${day})::int * 12 + extract(month from ${day})::int))`;
+  const n = sql`(case when ${k} >= 1 and (${fs} - make_interval(months => ${k}))::date <= ${day} then ${k} else ${k} + 1 end)`;
+  const closed = s.periods.filter((p) => p.end !== null).map((p) => sql`when ${day} <= ${lit(p.end!)} then ${lit(`${p.key}-01`)}`);
   return sql`(case
-    when ${day} < ${lit(e.prev.start)} then (${sdMonth} + ${plus(e.beforeShift)})::date
-    when ${day} < ${lit(e.first.start)} then ${keyLit(e.prev.key)}
-    ${sql.join(branches, sql` `)}
-    when ${day} <= ${lit(e.next.end)} then ${keyLit(e.next.key)}
-    else (${sdMonth} + ${plus(e.afterShift)})::date
+    when ${day} < ${fs} then (${fk} - make_interval(months => ${n}))::date
+    ${sql.join(closed, sql` `)}
+    else ${lit(`${last.key}-01`)}
   end)`;
 }

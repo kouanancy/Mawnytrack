@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { CaisseMonth } from "@/lib/caisse";
 import { fmt, fmtNb } from "@/lib/format";
 import { savingSplit } from "@/lib/ledger";
-import { isCalendarPeriod, periodEndLabel, periodName, periodRange, type PeriodSettings } from "@/lib/period";
+import { isCalendarPeriod, periodName, periodRange, type PeriodSettings } from "@/lib/period";
 
 const shortMonth = (m: string) => {
   const [y, mo] = m.split("-").map(Number);
@@ -101,7 +101,7 @@ function PeriodDetail({ r, ps }: { r: CaisseMonth; ps: PeriodSettings }) {
         ? { label: "Dépenses hors budget à ce jour", value: fmt(-unspent), kind: "soft" }
         : { label: "Non dépensé à ce jour", value: fmt(unspent), kind: "soft" },
     ];
-    note = `Ajouté à la caisse le ${periodEndLabel(r.month, ps)} pour la part restant non dépensée`;
+    note = "Ajouté à la caisse à la clôture du mois pour la part restant non dépensée";
   }
   return (
     <>

@@ -2,21 +2,42 @@
 
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 
-const ToastContext = createContext<(msg: string) => void>(() => {});
+/** Action proposée dans la notification (ex. « Annuler » pendant quelques secondes). */
+type ToastOptions = { action?: { label: string; onClick: () => void }; duration?: number };
+type Toast = (msg: string, options?: ToastOptions) => void;
+
+const ToastContext = createContext<Toast>(() => {});
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [msg, setMsg] = useState<string | null>(null);
+  const [state, setState] = useState<{ msg: string; action?: ToastOptions["action"] } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const toast = useCallback((m: string) => {
-    setMsg(m);
+  const toast = useCallback<Toast>((msg, options) => {
+    setState({ msg, action: options?.action });
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setMsg(null), 2800);
+    timer.current = setTimeout(() => setState(null), options?.duration ?? 2800);
   }, []);
   return (
     <ToastContext.Provider value={toast}>
       {children}
       <div role="status" aria-live="polite">
-        {msg && <div className="toast">{msg}</div>}
+        {state && (
+          <div className="toast">
+            <span>{state.msg}</span>
+            {state.action && (
+              <button
+                type="button"
+                className="toast-act"
+                onClick={() => {
+                  clearTimeout(timer.current);
+                  setState(null);
+                  state.action!.onClick();
+                }}
+              >
+                {state.action.label}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </ToastContext.Provider>
   );

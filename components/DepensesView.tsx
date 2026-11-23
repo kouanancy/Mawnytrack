@@ -10,7 +10,7 @@ import { Journal } from "@/components/Journal";
 import type { MoveEdit } from "@/components/MoveEditForm";
 import { updateMove } from "@/app/(app)/prets/actions";
 import { useToast } from "@/components/Toast";
-import { currentPeriod, longDate, periodOf, type PeriodSettings } from "@/lib/period";
+import { currentPeriod, longDate, periodName, periodOf, periodStatus, type PeriodSettings } from "@/lib/period";
 import { ReconcileSheet } from "@/components/ReconcileSheet";
 import { PdfPreview } from "@/components/PdfPreview";
 import { sortiesFilename } from "@/lib/statement";
@@ -227,7 +227,12 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
           )}
         </section>
 
-        {!view.lines.some((l) => !l.system) ? (
+        {periodStatus(month, ps) === "future" ? (
+          // Mois prévu : pas de saisie avant la clôture du mois en cours
+          <div className="quick future-note" role="note">
+            <p>Ce mois s&apos;ouvrira à la clôture de {periodName(currentPeriod(ps), ps)}.</p>
+          </div>
+        ) : !view.lines.some((l) => !l.system) ? (
           <div className="quick welcome">
             <h2>Bienvenue dans Mawnytrack</h2>
             <p className="hint">Pour commencer :</p>

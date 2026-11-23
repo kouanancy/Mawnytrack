@@ -8,9 +8,6 @@ import { auth } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { appOrigin } from "@/lib/origin";
 import { currentWeekStart, generateReport, sendReport } from "@/lib/report";
-import { APP_TZ, addDays, localDayTime, monthLabel } from "@/lib/month";
-import { isStartDay, longDate, periodName } from "@/lib/period";
-import { getPeriodSettings } from "@/lib/period-server";
 import { THEME_COOKIE, isTheme, type Theme } from "@/lib/theme";
 import { actionUserId } from "@/lib/session";
 
@@ -106,91 +103,6 @@ export async function sendTestReport(): Promise<SettingsResult> {
   } catch {
     return fail("Le rapport n'a pas pu être préparé. Réessayez.");
   }
-}
-
-/* ---------- Mois budgétaire ---------- */
-
-/**
- * Enregistre le réglage par défaut du mois budgétaire (jour de début, nom). Il sert seulement à proposer les dates
- * des nouvelles périodes : les périodes déjà enregistrées (budget_periods) gardent leurs dates.
- */
-export async function setBudgetPeriod(input: { startDay: number; naming: string }): Promise<SettingsResult> {
-  const userId = await actionUserId();
-  const { startDay, naming } = input;
-  if (!isStartDay(startDay)) return fail("Choisissez un jour entre le 1er et le 28.");
-  if (naming !== "end" && naming !== "start") return fail("Choix du nom de la période invalide.");
-  await db
-    .insert(schema.userSettings)
-    .values({ userId, startDay, periodNaming: naming })
-    .onConflictDoUpdate({ target: schema.userSettings.userId, set: { startDay, periodNaming: naming, updatedAt: sql`now()` } });
-  revalidatePath("/", "layout");
-  return ok(`Valeur par défaut enregistrée : les prochains mois commenceront le ${startDay === 1 ? "1er" : startDay}.`);
-}
-
-const DAY_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
-const isDay = (v: unknown): v is string => typeof v === "string" && DAY_RE.test(v) && !Number.isNaN(Date.parse(v));
-
-/**
- * Modifie les dates (et le nom) d'une période. Changer l'ouverture déplace la clôture de la période précédente
- * (veille), changer la clôture déplace l'ouverture de la suivante (lendemain). Refus si une période devient vide
- * ou si la clôture précède l'ouverture. Aucune transaction n'est modifiée : seuls les regroupements changent.
- * closing : clôture du mois en cours depuis le Budget (closed_at renseigné).
- */
-export async function updatePeriod(input: { id: string; name?: string; start: string; end: string; closing?: boolean }): Promise<SettingsResult> {
-  const userId = await actionUserId();
-  const { id, start, end } = input;
-  if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) return fail("Mois introuvable.");
-  if (!isDay(start) || !isDay(end)) return fail("Dates invalides.");
-  if (end < start) return fail("La clôture ne peut pas précéder l'ouverture.");
-  const name = typeof input.name === "string" ? input.name.trim().replace(/\s+/g, " ").slice(0, 40) : null;
-
-  const ps = await getPeriodSettings(userId);
-  const i = ps.periods.findIndex((p) => p.id === id);
-  if (i < 0) return fail("Mois introuvable.");
-  const cur = ps.periods[i], prev = ps.periods[i - 1], next = ps.periods[i + 1];
-  if (prev && addDays(start, -1) < prev.start)
-    return fail(`Le mois « ${periodName(prev.key, ps)} » deviendrait vide : l'ouverture doit être après le ${longDate(prev.start)}.`);
-  if (next && addDays(end, 1) > next.end)
-    return fail(`Le mois « ${periodName(next.key, ps)} » deviendrait vide : la clôture doit être avant le ${longDate(next.end)}.`);
-  if (input.closing) {
-    const today = localDayTime(new Date(), APP_TZ).day;
-    if (start !== cur.start) return fail("Mois introuvable.");
-    if (end > today) return fail("La date de clôture ne peut pas être dans le futur.");
-  }
-  // Nom identique au nom par défaut (mois de la clé) : rien d'enregistré, il suit le mois de la clé
-  const stored = name === null ? cur.name : name && name.toLowerCase() !== monthLabel(cur.key).toLowerCase() ? name : null;
-
-  // Une transaction : la période et ses voisines, contrôlées à nouveau en SQL ; les contraintes (sans trou ni
-  // chevauchement) sont vérifiées en fin de transaction.
-  const res = await db.execute(sql`
-    with p as (
-      select id, start_date, end_date from budget_periods where id = ${id} and user_id = ${userId}
-    ), pv as (
-      select b.id, b.start_date from budget_periods b, p where b.user_id = ${userId} and b.end_date = p.start_date - 1
-    ), nx as (
-      select b.id, b.end_date from budget_periods b, p where b.user_id = ${userId} and b.start_date = p.end_date + 1
-    ), chk as (
-      select (${start})::date <= (${end})::date
-        and coalesce((${start})::date - 1 >= (select start_date from pv), true)
-        and coalesce((${end})::date + 1 <= (select end_date from nx), true) as ok
-    ), u_prev as (
-      update budget_periods set end_date = (${start})::date - 1
-      where id = (select id from pv) and (select ok from chk) returning id
-    ), u_next as (
-      update budget_periods set start_date = (${end})::date + 1
-      where id = (select id from nx) and (select ok from chk) returning id
-    ), u_p as (
-      update budget_periods set start_date = (${start})::date, end_date = (${end})::date, name = ${stored},
-        closed_at = case when ${input.closing === true} then now() else closed_at end
-      where id = (select id from p) and (select ok from chk) returning id
-    )
-    select (select count(*) from u_p) as updated`);
-  if (!Number((res as unknown as { rows: Record<string, unknown>[] }).rows[0]?.updated)) return fail("Modification impossible. Réessayez.");
-  revalidatePath("/", "layout");
-  const label = stored || monthLabel(cur.key);
-  if (input.closing)
-    return ok(`Mois « ${label} » clôturé le ${longDate(end)}. Le mois suivant s'ouvre le ${longDate(addDays(end, 1))}.`);
-  return ok(`« ${label} » : du ${longDate(start)} au ${longDate(end)}. Les mouvements et la caisse sont recalculés.`);
 }
 
 /* ---------- Profil ---------- */
