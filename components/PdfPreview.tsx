@@ -18,7 +18,8 @@ function isStandalone() {
 async function renderPages(data: ArrayBuffer): Promise<{ url: string; w: number; h: number }[]> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url).toString();
-  const doc = await pdfjs.getDocument({ data }).promise;
+  const task = pdfjs.getDocument({ data });
+  const doc = await task.promise;
   const pages = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
@@ -31,7 +32,8 @@ async function renderPages(data: ArrayBuffer): Promise<{ url: string; w: number;
     const blob = await new Promise<Blob>((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error("rendu"))), "image/png"));
     pages.push({ url: URL.createObjectURL(blob), w: canvas.width, h: canvas.height });
   }
-  await doc.destroy();
+  // pdf.js 6 : le document se libère par sa tâche de chargement
+  await task.destroy();
   return pages;
 }
 

@@ -43,7 +43,7 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   défile dans son propre cadre sur téléphone.
 - Boutons d'impression (relevé des prêts, dépenses filtrées) : ouvrent d'abord l'aperçu plein écran
   `components/PdfPreview.tsx`. Le PDF (`lib/pdf.ts`, routes `/depenses/pdf?m=&ligne=` et
-  `/prets/[id]/releve/pdf?m=YYYY-MM|tout`) est rendu page par page avec pdf.js (`pdfjs-dist`, version legacy,
+  `/prets/[id]/releve/pdf?m=YYYY-MM|tout`) est rendu page par page avec pdf.js (`pdfjs-dist` 6, version legacy,
   chargé seulement à l'ouverture) : pages A4 défilables, zoom −/+ et pincement. Boutons en bas :
   - « Partager » : `navigator.share` avec le PDF en pièce jointe (WhatsApp, e-mail, Fichiers…), appelé directement
     dans le clic ; sans partage (ordinateur), téléchargement avec un message ;
