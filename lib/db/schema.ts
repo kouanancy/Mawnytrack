@@ -159,3 +159,24 @@ export const weeklyReports = pgTable("weekly_reports", {
   sentAt: tstz("sent_at"),
   data: jsonb("data").notNull(),
 });
+
+/** Budgets d'événement (009) : listes indépendantes de la caisse, du budget mensuel et des dépenses. */
+export const eventBudgets = pgTable("event_budgets", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  eventDate: date("event_date", { mode: "string" }),
+  notes: text("notes").notNull().default(""),
+  createdAt: tstz("created_at").notNull().defaultNow(),
+});
+
+/** Article d'un budget d'événement : montant total seulement, classé par catégorie, ordre libre (position). */
+export const eventBudgetItems = pgTable("event_budget_items", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  budgetId: uuid("budget_id").notNull(),
+  userId: text("user_id").notNull(),
+  category: text("category").notNull(),
+  label: text("label").notNull(),
+  amount: money("amount").notNull(),
+  position: integer("position").notNull().default(0),
+});

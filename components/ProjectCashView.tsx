@@ -13,7 +13,6 @@ import {
   updateProjectMove,
 } from "@/app/(app)/investissements/actions";
 import { IcoBack, IcoPrint, IcoTrash } from "@/components/Icons";
-import { kindName } from "@/components/InvestView";
 import { MoveEditForm } from "@/components/MoveEditForm";
 import { useToast } from "@/components/Toast";
 import type { Project, ProjectMove } from "@/lib/caisse";
@@ -216,7 +215,7 @@ export function ProjectCashView({ data, today, tz }: { data: Data; today: string
             </div>
             <div>
               <h1>{p.name}</h1>
-              <span>{kindName(p.kind)}</span>
+              <span>Projet</span>
             </div>
             <span className={`pill ${status[0]}`}>{status[1]}</span>
           </section>

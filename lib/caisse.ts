@@ -3,6 +3,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { APP_TZ } from "@/lib/month";
 import type { PeriodSettings } from "@/lib/period";
+import { eventBudgetsQuery, toSummaries } from "@/lib/event-budgets-server";
 import { getPeriodSettings, periodKeySql } from "@/lib/period-server";
 
 // Caisse, par période (mois budgétaire), revenus `income` seuls (jamais les emprunts) :
@@ -204,16 +205,24 @@ const toProject = (r: Row): Project => {
   };
 };
 
-/** Investissements et projets avec leurs totaux, et disponible en caisse, en un seul lot. */
-export async function getProjects(userId: string) {
-  const [projects, avail] = (await db.batch([
+/**
+ * Projets avec leurs totaux et disponible en caisse, en un seul lot ; withBudgets : budgets d'événement en plus
+ * (liste du module Investissements).
+ */
+export async function getProjects(userId: string, withBudgets = false) {
+  const [projects, avail, budgets] = (await db.batch([
     db.execute(sql`
       select ${projectCols} from ${projectFrom(userId)}
       where p.user_id = ${userId}
       order by p.created_at`),
     db.execute(sql`select ${caisseAvailableSql(userId, await getPeriodSettings(userId))} as available`),
-  ])) as unknown as Rows[];
-  return { projects: projects.rows.map(toProject), available: n(avail.rows[0]?.available) };
+    ...(withBudgets ? [eventBudgetsQuery(userId)] : []),
+  ] as unknown as Parameters<typeof db.batch>[0])) as unknown as Rows[];
+  return {
+    projects: projects.rows.map(toProject),
+    available: n(avail.rows[0]?.available),
+    budgets: budgets ? toSummaries(budgets) : [],
+  };
 }
 
 /**

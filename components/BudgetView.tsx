@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useOptimistic, useState, useTransition } from "react";
 import { addLine, deleteLine, setPlanned } from "@/app/(app)/actions";
 import { updatePeriod } from "@/app/settings-actions";
-import { IcoTrash } from "@/components/Icons";
+import { IcoSearch, IcoTrash } from "@/components/Icons";
+import { matches } from "@/lib/search";
 import { RestSheet } from "@/components/RestSheet";
 import { useToast } from "@/components/Toast";
 import type { Line, MonthData } from "@/lib/data";
@@ -33,6 +34,8 @@ export function BudgetView({ data, month, status, endLabel, period, closing }: P
   const [confirm, setConfirm] = useState<string | null>(null);
   const [adding, setAdding] = useState(!data.lines.some((l) => !l.system));
   const [closeAsk, setCloseAsk] = useState(false);
+  // Recherche dans les lignes (à chaque lettre, sans majuscules ni accents) ; la synthèse reste non filtrée
+  const [q, setQ] = useState("");
   const [closeDay, setCloseDay] = useState(closing?.today ?? "");
   const [detail, setDetail] = useState(false);
   const closeDetail = useCallback(() => setDetail(false), []);
@@ -67,6 +70,11 @@ export function BudgetView({ data, month, status, endLabel, period, closing }: P
       </small>
     );
   const borrowed = view.lines.filter((l) => l.direction === "borrowed");
+  const searching = q.trim() !== "";
+  const fBudget = budget.filter((l) => matches(l.label, q));
+  const fLent = lent.filter((l) => matches(l.label, q));
+  const fBorrowed = borrowed.filter((l) => matches(l.label, q));
+  const noMatch = searching && !fBudget.length && !fLent.length && !fBorrowed.length;
 
   function plan(l: Line, input: HTMLInputElement) {
     const v = parseAmount(input.value);
@@ -101,7 +109,7 @@ export function BudgetView({ data, month, status, endLabel, period, closing }: P
     startTransition(async () => {
       addOp({
         type: "addLine",
-        line: { id: tempId(), label, personId: null, direction: null, planned: p, spent: 0, expense: 0, refund: 0, due: 0, loans: 0, pays: 0, system: false },
+        line: { id: tempId(), label, personId: null, direction: null, planned: p, spent: 0, expense: 0, refund: 0, due: 0, loans: 0, pays: 0, system: false, lastUsed: null, recentUses: 0 },
       });
       const res = await addLine({ label, planned: p });
       toast(res.ok ? "Ligne ajoutée" : res.error);
@@ -305,20 +313,51 @@ export function BudgetView({ data, month, status, endLabel, period, closing }: P
         </div>
       )}
 
-      <div className="sect">
-        <h2>Lignes de budget</h2>
-        <span>
-          {budget.filter((l) => !l.system).length} {plural(budget.filter((l) => !l.system).length, "ligne", "lignes")}
-        </span>
-      </div>
-      {budget.length ? (
-        <div className="lines-grid">{budget.map(card)}</div>
-      ) : (
-        <div className="list">
-          <div className="empty">Aucune ligne. Ajoutez par exemple Repas, Transport ou Loyer.</div>
+      {view.lines.length > 1 && (
+        <div className="search" role="search">
+          <IcoSearch />
+          <input
+            type="search"
+            aria-label="Rechercher une ligne"
+            placeholder="Rechercher une ligne…"
+            autoComplete="off"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && setQ("")}
+          />
+          {q && (
+            <button type="button" className="search-clear" aria-label="Effacer la recherche" onClick={() => setQ("")}>
+              ×
+            </button>
+          )}
         </div>
       )}
-      <details className="add" open={adding} onToggle={(e) => setAdding(e.currentTarget.open)}>
+      {noMatch && (
+        <div className="list">
+          <div className="empty">Aucune ligne ne correspond à « {q.trim()} ».</div>
+        </div>
+      )}
+
+      {(!searching || fBudget.length > 0) && (
+        <>
+          <div className="sect">
+            <h2>Lignes de budget</h2>
+            <span>
+              {searching
+                ? `${fBudget.length} ${plural(fBudget.length, "résultat", "résultats")}`
+                : `${budget.filter((l) => !l.system).length} ${plural(budget.filter((l) => !l.system).length, "ligne", "lignes")}`}
+            </span>
+          </div>
+          {fBudget.length ? (
+            <div className="lines-grid">{fBudget.map(card)}</div>
+          ) : (
+            <div className="list">
+              <div className="empty">Aucune ligne. Ajoutez par exemple Repas, Transport ou Loyer.</div>
+            </div>
+          )}
+        </>
+      )}
+      <details className="add" hidden={searching} open={adding} onToggle={(e) => setAdding(e.currentTarget.open)}>
         <summary>+ Ajouter une ligne de budget</summary>
         <form onSubmit={add}>
           <div className="row">
@@ -344,22 +383,22 @@ export function BudgetView({ data, month, status, endLabel, period, closing }: P
         </form>
       </details>
 
-      {lent.length > 0 && (
+      {fLent.length > 0 && (
         <>
           <div className="sect">
             <h2>Prêts accordés</h2>
             <span>Liés au volet Prêts</span>
           </div>
-          <div className="lines-grid">{lent.map(card)}</div>
+          <div className="lines-grid">{fLent.map(card)}</div>
         </>
       )}
-      {borrowed.length > 0 && (
+      {fBorrowed.length > 0 && (
         <>
           <div className="sect">
             <h2>Remboursements d&apos;emprunts</h2>
             <span>Budget mensuel de remboursement</span>
           </div>
-          <div className="lines-grid">{borrowed.map(card)}</div>
+          <div className="lines-grid">{fBorrowed.map(card)}</div>
         </>
       )}
       {detail && <RestSheet data={view} period={period} onClose={closeDetail} onPick={pickLine} />}

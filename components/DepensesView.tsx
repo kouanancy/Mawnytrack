@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
-import { addExpense, addIncome, deleteTransaction, updateEntry } from "@/app/(app)/actions";
+import { addExpense, addIncome, addLine, deleteTransaction, updateEntry } from "@/app/(app)/actions";
+import { LineCombobox } from "@/components/LineCombobox";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { IcoPrint } from "@/components/Icons";
 import { Journal } from "@/components/Journal";
@@ -16,7 +17,7 @@ import { sortiesFilename } from "@/lib/statement";
 import { Brand } from "@/components/Brand";
 import type { Entry, MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount, plural } from "@/lib/format";
-import { UNLISTED_INCOME, checkExpense, defaultLabel, entryEditCheck, isMove, isExhausted, lineGroups, reduce, stamp, summary, tempId } from "@/lib/ledger";
+import { UNLISTED_INCOME, checkExpense, defaultLabel, entryEditCheck, isMove, isExhausted, reduce, stamp, summary, tempId } from "@/lib/ledger";
 
 type Props = {
   data: MonthData;
@@ -38,7 +39,10 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
 
   const [amount, setAmount] = useState("");
   const [label, setLabel] = useState("");
-  const [lineId, setLineId] = useState<string | null>(null);
+  // Ligne préremplie : la dernière utilisée (elle reste choisie pour la saisie suivante)
+  const [lineId, setLineId] = useState<string | null>(
+    () => [...data.lines].filter((l) => l.lastUsed).sort((a, b) => (b.lastUsed ?? "").localeCompare(a.lastUsed ?? ""))[0]?.id ?? null,
+  );
   const [filter, setFilter] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
   const [reconcile, setReconcile] = useState(false);
@@ -47,7 +51,8 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
   const amountRef = useRef<HTMLInputElement>(null);
 
 
-  const line = view.lines.find((l) => l.id === lineId) ?? view.lines[0];
+  // Une ligne doit être choisie pour enregistrer
+  const line = view.lines.find((l) => l.id === lineId);
   const amt = parseAmount(amount);
   const check = checkExpense(line, amt);
   const { inflow, out, rest, pct } = summary(view.totals);
@@ -140,6 +145,25 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
           ? await addExpense({ month, amount: amt, label, lineId: unlisted.id })
           : await addIncome({ month, amount: amt, label });
       toast(res.ok ? `Rapprochement enregistré : reste disponible ${fmt(real)} FCFA` : res.error);
+    });
+  }
+
+  /** « Créer la ligne « … » » : nouvelle ligne au budget prévu 0 (modifiable ensuite dans le Budget), aussitôt choisie. */
+  function createLine(name: string) {
+    const temp = tempId();
+    setLineId(temp);
+    startTransition(async () => {
+      addOp({
+        type: "addLine",
+        line: { id: temp, label: name, personId: null, direction: null, planned: 0, spent: 0, expense: 0, refund: 0, due: 0, loans: 0, pays: 0, system: false, lastUsed: null, recentUses: 0 },
+      });
+      const res = await addLine({ label: name, planned: 0 });
+      if (!res.ok) {
+        setLineId(null);
+        return toast(res.error);
+      }
+      setLineId(res.id ?? null);
+      toast(`Ligne « ${name} » créée (budget prévu 0, modifiable dans le Budget)`);
     });
   }
 
@@ -253,23 +277,11 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
               </div>
               <div className="field" style={{ flex: "2 1 150px" }}>
                 <label htmlFor="q-cat">Ligne de budget</label>
-                <select id="q-cat" value={line?.id} onChange={(e) => setLineId(e.target.value)}>
-                  {lineGroups(view.lines).map((g) =>
-                    g.lines.length ? (
-                      <optgroup key={g.name} label={g.name}>
-                        {g.lines.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null,
-                  )}
-                </select>
+                <LineCombobox id="q-cat" lines={view.lines} value={line?.id ?? null} onChange={setLineId} onCreate={createLine} />
               </div>
             </div>
             <div className="hint num" id="q-hint" aria-live="polite">
-              {check.bad ? <span className="bad">{check.hint}</span> : check.hint}
+              {!line ? "Choisissez une ligne de budget." : check.bad ? <span className="bad">{check.hint}</span> : check.hint}
             </div>
             <button className="btn out" type="submit" disabled={!check.ok}>
               Enregistrer la sortie

@@ -4,6 +4,6 @@ import { requireUserId } from "@/lib/session";
 
 export default async function Page() {
   const userId = await requireUserId();
-  const { projects, available } = await getProjects(userId);
-  return <InvestView projects={projects} available={available} />;
+  const { projects, available, budgets } = await getProjects(userId, true);
+  return <InvestView projects={projects} budgets={budgets} available={available} />;
 }

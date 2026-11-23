@@ -111,6 +111,17 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   d'un mois terminé, les valeurs sont figées dans `monthly_budgets` (`freezeMonth` dans `lib/data.ts`).
   Modifier le budget d'un mois terminé change sa valeur figée ; pour le mois en cours ou à venir, la valeur par défaut.
 - Épargne supplémentaire = revenus − budget prévu ; avertissement si le budget prévu dépasse les revenus.
+- Budget › recherche : champ « Rechercher une ligne… » (loupe, croix pour effacer, Échap) au-dessus des lignes ;
+  filtrage à chaque lettre sans majuscules ni accents (`lib/search.ts`) dans toutes les sections (Budget, Prêts
+  accordés, Remboursements d'emprunts, Dépenses non répertoriées) ; sections sans résultat masquées ; sinon
+  « Aucune ligne ne correspond à « … ». ». La synthèse n'est pas filtrée.
+- Dépenses › ligne de budget par recherche (`components/LineCombobox.tsx`, rôles combobox / listbox,
+  `aria-activedescendant`) : suggestions dès la première lettre (sans majuscules ni accents, lettres tapées en gras,
+  groupe en petit), lignes les plus utilisées sur 30 jours d'abord (`Line.recentUses`, `Line.lastUsed`, calculés
+  dans `linesQuery`) ; champ vide : 5 dernières lignes utilisées ; flèches, Entrée, Échap ; suggestions de 44 px
+  minimum. Une ligne doit être choisie pour enregistrer (« Choisissez une ligne de budget. ») ; sans résultat :
+  « Aucune ligne trouvée » et « Créer la ligne « … » » (budget prévu 0, `addLine` renvoie l'identifiant). La
+  dernière ligne utilisée est préremplie et reste choisie après une saisie.
 - Budget › « Argent restant » (synthèse) : bouton « Voir le détail › » qui ouvre le panneau « Reste par ligne »
   (`components/RestSheet.tsx` : monte du bas sur téléphone, centré à partir de 768 px ; croix, Échap ou appui à
   l'extérieur ; focus gardé dans le panneau). Titre + période (« novembre 2026 · 22 oct. – 21 nov. »), tableau
@@ -260,18 +271,31 @@ fait référence pour le design, les textes et le comportement : le reproduire f
 - Budget › « Épargne supplémentaire » : épargne prévue, puis « + non dépensé à ce jour : X FCFA (ajouté à la caisse
   le [dernier jour]) » pour la période en cours (« + non dépensé : X FCFA » pour une période terminée).
 
-## Investissements (`/investissements`, `app/(app)/investissements/actions.ts`)
-- Financés uniquement par la caisse ; les sorties ne touchent ni le budget, ni les dépenses, ni le reste disponible.
-- Création : nom, type (`investment` | `project`), montant nécessaire. Liste : carte caisse (déjà investi, reste à
-  financer, % des besoins couverts), filtre Tout / Investissements / Projets, statut « En préparation », « En cours »
-  ou « Financé », éléments financés en bas.
-- Fiche : montant nécessaire modifiable (jamais sous l'engagé), engagé non modifiable, « Sortir de la caisse »,
-  historique des sorties avec suppression confirmée (le montant revient en caisse), suppression du projet.
-- Règle : une sortie ne dépasse jamais le disponible en caisse ni le reste à financer. Message pendant la saisie,
-  bouton désactivé, et contrôle serveur dans une transaction sous verrou consultatif par utilisateur
-  (`pg_advisory_xact_lock`), qui sérialise aussi les changements de montant nécessaire.
-- Les règles ci-dessus (sorties `project_disbursements`) ne valent plus que pour les éléments de type
-  « Investissement ». Les éléments de type « Projet » ont leur propre caisse (ci-dessous).
+## Investissements (`/investissements`)
+- Deux types d'éléments : les projets (caisse propre, ci-dessous) et les budgets d'événement. Le type
+  « Investissement » a disparu (migration `009_event_budgets.sql` : chaque investissement est devenu un projet,
+  ses sorties de caisse des approvisionnements `fund` de même montant, libellé et date ; caisse principale
+  inchangée). `project_disbursements` reste vide et n'est plus alimentée.
+- Filtre Tout · Budgets · Projets ; résumé du haut selon le filtre (voir Projets ; « Budgets » : total prévu et
+  nombre de budgets). « + Nouveau projet » (nom, montant nécessaire) et « + Nouveau budget » (nom, date facultative).
+
+### Budgets d'événement (`event_budgets`, `event_budget_items`, `lib/event-budgets.ts`, `budget-actions.ts`)
+- Liste indépendante (« Budget fête », « Anniversaire des 10 ans ») : aucun lien avec la caisse, le budget mensuel
+  ni les dépenses. Articles : catégorie, désignation, montant total (ni quantité ni prix unitaire), position.
+- Liste du module : carte par budget (nom, date de l'événement, nombre d'articles, total prévu).
+- Fiche `/investissements/budgets/[id]` (`components/EventBudgetView.tsx`) : retour, nom et date modifiables,
+  icône d'impression ; chiffres clés Articles · Catégories · Total prévu ; articles groupés par catégorie (ordre
+  de la première apparition) avec sous-totaux et total ; ajout (désignation, montant, catégorie avec suggestions
+  `datalist`) ; article modifiable au toucher et supprimable avec confirmation ; ordre par glisser-déposer
+  (poignée, pointeur souris ou doigt, `reorderEventItems`) ou flèches haut et bas sur la poignée ; Notes
+  (enregistrées à la sortie du champ) ; « Dupliquer ce budget » (« (copie) », articles copiés) et « Supprimer ce
+  budget » (confirmation).
+- PDF `/investissements/budgets/[id]/pdf` dans l'aperçu habituel : en-tête logo + « BUDGET D'ÉVÉNEMENT », à
+  droite le nom en grand, « Date de l'événement : … » et « Établi le … » (`rightLines`), trait épais ; trois cases
+  grises (`boxes`) ; tableau Désignation · Montant, titre de catégorie (style `group`, majuscules), « Sous-total »
+  (style `subtotal`), « Total prévu » (style `total`), « Notes : … » ; pied « Mawnytrack · Budget d'événement ·
+  [nom] » (`footerLeft`) et « Page X / Y ». Fichier `Budget-[nom]-[date de l'événement ou du jour].pdf`.
+- Export et « Tout réinitialiser » incluent les budgets d'événement.
 
 ### Projets : caisse propre (`project_moves`, migration `007_project_moves.sql`, `lib/project-cash.ts`)
 - Table `project_moves` (type `fund` = approvisionnement depuis la caisse principale, `out` = sortie du projet,
@@ -295,8 +319,8 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   suppression confirmée dans la page. En bas : « Clôturer le projet » (« Confirmer : rendre X FCFA à la caisse et
   clôturer » : restitution du solde puis `closed_at`) et « Supprimer ce projet » (l'alloué revient en caisse).
 - Liste : cartes Projet avec le solde en grand, « Alloué X / nécessaire Y » et « Dépensé Z ». Résumé du haut
-  selon le filtre : « Tout » et « Investissements » gardent le résumé d'origine (Disponible en caisse, Déjà investi,
-  Reste à financer, des éléments affichés), sans chiffre des caisses de projets ; « Projets » affiche « Disponible
+  selon le filtre : « Tout » garde le résumé d'origine (Disponible en caisse, Déjà investi = alloué aux projets,
+  Reste à financer), sans chiffre des caisses de projets ; « Budgets » : total prévu des budgets d'événement ; « Projets » affiche « Disponible
   dans la caisse principale », « Dans les caisses des projets » (somme des soldes) et « Dépensé sur les projets ».
   La section « Projets clôturés » (en bas) n'apparaît qu'avec le filtre « Projets ».
 - Rapport (`lib/project-report.ts`, page `/investissements/[id]/rapport?apres=<sortie>` et PDF
