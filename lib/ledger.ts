@@ -294,3 +294,18 @@ export function entryMoveCtx(data: MonthData, e: Entry, date: string, month: str
         : null,
   };
 }
+
+/**
+ * Lignes modifiables d'un journal et leur contrôle : mouvements de prêts et d'emprunts (checkMove), revenus et
+ * dépenses de la ligne système « Dépenses non répertoriées » (rapprochement ; montant seul à contrôler).
+ * null : ligne non modifiable.
+ */
+export function entryEditCheck(data: MonthData, e: Entry, amount: number, date: string, month: string, ps: PeriodSettings): Check | null {
+  if (isMove(e)) {
+    const ctx = entryMoveCtx(data, e, date, month, ps);
+    return ctx ? checkMove(ctx, amount) : null;
+  }
+  const simple = e.kind === "income" || (e.kind === "expense" && data.lines.some((l) => l.id === e.lineId && l.system));
+  if (!simple) return null;
+  return amount > 0 ? { ok: true, bad: false, hint: "" } : { ok: false, bad: false, hint: "" };
+}

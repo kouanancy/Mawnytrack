@@ -99,7 +99,7 @@ export function Header({ current, ps }: { current: string; ps: PeriodSettings })
               <IcoBack />
             </Link>
             <b>
-              {periodName(month)}
+              {periodName(month, ps)}
               <small className="num">{periodRange(month, ps)}</small>
             </b>
             <Link href={withMonth(pathname, shiftMonth(month, 1))} aria-label="Mois suivant" scroll={false}>

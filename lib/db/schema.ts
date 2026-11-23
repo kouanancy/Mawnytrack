@@ -70,6 +70,8 @@ export const budgetLines = pgTable("budget_lines", {
   personId: uuid("person_id"),
   position: integer("position").notNull().default(0),
   createdAt: tstz("created_at").notNull().defaultNow(),
+  /** Ligne système (008) : 'unlisted' = « Dépenses non répertoriées », ni supprimable ni renommable, budget 0 */
+  system: text("system", { enum: ["unlisted"] }),
 });
 
 export const monthlyBudgets = pgTable("monthly_budgets", {
@@ -78,6 +80,21 @@ export const monthlyBudgets = pgTable("monthly_budgets", {
   lineId: uuid("line_id").notNull(),
   month: date("month", { mode: "string" }).notNull(),
   planned: money("planned").notNull(),
+  /** Période du budget figé (008) */
+  periodId: uuid("period_id"),
+});
+
+/** Mois budgétaires (008) : dates d'ouverture et de clôture, sans trou ni chevauchement (contraintes en base). */
+export const budgetPeriods = pgTable("budget_periods", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  /** Clé : 1er jour du mois de la clé (comme monthly_budgets.month) */
+  month: date("month", { mode: "string" }).notNull(),
+  name: text("name"),
+  startDate: date("start_date", { mode: "string" }).notNull(),
+  endDate: date("end_date", { mode: "string" }).notNull(),
+  closedAt: tstz("closed_at"),
+  createdAt: tstz("created_at").notNull().defaultNow(),
 });
 
 export const transactions = pgTable("transactions", {

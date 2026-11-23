@@ -27,6 +27,8 @@ export type Line = {
   /** Personne liée, tous mois confondus : total prêté ou emprunté, et total remboursé */
   loans: number;
   pays: number;
+  /** Ligne système « Dépenses non répertoriées » (ni supprimable ni renommable, sans plafond) */
+  system: boolean;
 };
 
 export type Entry = {
@@ -60,8 +62,10 @@ const n = (v: unknown) => (v == null ? 0 : Number(v));
 /** Fige les budgets d'une période terminée (idempotent : seules les lignes non encore figées sont ajoutées). */
 function freezeMonth(userId: string, start: string) {
   return db.execute(sql`
-    insert into monthly_budgets (user_id, line_id, month, planned)
-    select user_id, id, (${start})::date, planned from budget_lines where user_id = ${userId}
+    insert into monthly_budgets (user_id, line_id, month, planned, period_id)
+    select user_id, id, (${start})::date, planned,
+      (select bp.id from budget_periods bp where bp.user_id = ${userId} and bp.month = (${start})::date)
+    from budget_lines where user_id = ${userId}
     on conflict (line_id, month) do nothing`);
 }
 
@@ -101,7 +105,7 @@ function linesQuery(userId: string, month: string, ps: PeriodSettings) {
       where t.user_id = ${userId}
       group by t.person_id
     )
-    select bl.id, bl.label, bl.person_id, p.direction,
+    select bl.id, bl.label, bl.person_id, p.direction, bl.system is not null as system,
       coalesce(mb.planned, bl.planned) as planned,
       case when p.direction = 'lent' then greatest(coalesce(a.spent, 0), 0) else greatest(coalesce(s.spent, 0), 0) end as spent,
       case when p.direction = 'lent' then coalesce(a.expense, 0) else coalesce(s.expense, 0) end as expense,
@@ -114,7 +118,8 @@ function linesQuery(userId: string, month: string, ps: PeriodSettings) {
     left join a on a.line_id = bl.id
     left join d on d.person_id = bl.person_id
     where bl.user_id = ${userId}
-    order by bl.position, bl.created_at`);
+    -- La ligne système « Dépenses non répertoriées » toujours en dernier
+    order by bl.system is not null, bl.position, bl.created_at`);
 }
 
 function totalsQuery(userId: string, month: string, ps: PeriodSettings) {
@@ -170,6 +175,7 @@ function toLine(r: Record<string, unknown>): Line {
     due: n(r.due),
     loans: n(r.loans),
     pays: n(r.pays),
+    system: r.system === true,
   };
 }
 

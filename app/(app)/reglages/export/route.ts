@@ -19,13 +19,14 @@ export async function GET() {
     q("people", "created_at"),
     q("budget_lines", "position, created_at"),
     q("monthly_budgets", "month, line_id"),
+    q("budget_periods", "start_date"),
     q("transactions", "occurred_at"),
     q("projects", "created_at"),
     q("project_disbursements", "occurred_at"),
     q("project_moves", "occurred_at, created_at"),
     q("weekly_reports", "week_start"),
   ])) as unknown as Rows[];
-  const [user, settings, people, budgetLines, monthlyBudgets, transactions, projects, disbursements, projectMoves, reports] = res.map((r) => r.rows);
+  const [user, settings, people, budgetLines, monthlyBudgets, budgetPeriods, transactions, projects, disbursements, projectMoves, reports] = res.map((r) => r.rows);
   const data = {
     application: "Mawnytrack",
     version: pkg.version,
@@ -36,6 +37,7 @@ export async function GET() {
     people,
     budget_lines: budgetLines,
     monthly_budgets: monthlyBudgets,
+    budget_periods: budgetPeriods,
     transactions,
     projects,
     project_disbursements: disbursements,

@@ -2,20 +2,21 @@
 
 import Link from "next/link";
 import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
-import { addExpense, deleteTransaction } from "@/app/(app)/actions";
+import { addExpense, addIncome, deleteTransaction, updateEntry } from "@/app/(app)/actions";
 import { CategoryFilter } from "@/components/CategoryFilter";
 import { IcoPrint } from "@/components/Icons";
 import { Journal } from "@/components/Journal";
 import type { MoveEdit } from "@/components/MoveEditForm";
 import { updateMove } from "@/app/(app)/prets/actions";
 import { useToast } from "@/components/Toast";
-import { periodOf, type PeriodSettings } from "@/lib/period";
+import { currentPeriod, longDate, periodOf, type PeriodSettings } from "@/lib/period";
+import { ReconcileSheet } from "@/components/ReconcileSheet";
 import { PdfPreview } from "@/components/PdfPreview";
 import { sortiesFilename } from "@/lib/statement";
 import { Brand } from "@/components/Brand";
 import type { Entry, MonthData } from "@/lib/data";
 import { fmt, formatInput, parseAmount, plural } from "@/lib/format";
-import { checkExpense, defaultLabel, entryMoveCtx, isExhausted, lineGroups, reduce, stamp, summary, tempId } from "@/lib/ledger";
+import { checkExpense, defaultLabel, entryEditCheck, isMove, isExhausted, lineGroups, reduce, stamp, summary, tempId } from "@/lib/ledger";
 
 type Props = {
   data: MonthData;
@@ -40,6 +41,9 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
   const [lineId, setLineId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
+  const [reconcile, setReconcile] = useState(false);
+  const isCurrent = month === currentPeriod(ps, tz);
+  const unlisted = view.lines.find((l) => l.system);
   const amountRef = useRef<HTMLInputElement>(null);
 
 
@@ -52,7 +56,8 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
   const filterLine = filter ? view.lines.find((l) => l.id === filter) : undefined;
   const activeFilter = filterLine ? filter : null;
   const entries = useMemo(
-    () => view.entries.filter((e) => !activeFilter || e.lineId === activeFilter),
+    // Journal des sorties : dépenses et remboursements reçus (une entrée de rapprochement n'y figure pas)
+    () => view.entries.filter((e) => (e.kind === "expense" || e.kind === "refund") && (!activeFilter || e.lineId === activeFilter)),
     [view.entries, activeFilter],
   );
   const filtered = entries.reduce((a, e) => a + (e.kind === "refund" ? -e.amount : e.amount), 0);
@@ -92,13 +97,49 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
     });
   }
 
-  /** Modification d'un prêt, d'un emprunt ou d'un remboursement (transaction liée à une personne). */
+  /** Modification d'un mouvement : prêt, emprunt, remboursement, revenu ou dépense non répertoriée. */
   function edit(e: Entry, v: MoveEdit) {
     const keep = periodOf(v.date, ps) === month;
     startTransition(async () => {
       addOp({ type: "edit", keep, entry: { ...e, amount: v.amount, label: v.label || e.label, day: v.date } });
-      const res = await updateMove({ id: e.id, ...v });
+      const res = isMove(e) ? await updateMove({ id: e.id, ...v }) : await updateEntry({ id: e.id, ...v });
       toast(res.ok ? (keep ? "Modification enregistrée" : "Modification enregistrée : mouvement déplacé dans une autre période") : res.error);
+    });
+  }
+
+  /**
+   * Rapprochement : l'écart entre le reste disponible et l'argent réel est enregistré comme dépense sur la ligne
+   * « Dépenses non répertoriées » (par le chemin habituel addExpense : cette ligne n'a pas de plafond) ou comme
+   * entrée non répertoriée (revenu). Le reste disponible devient égal à l'argent réel saisi.
+   */
+  function reconcileWith(kind: "expense" | "income", amt: number) {
+    if (!unlisted) return;
+    setReconcile(false);
+    const real = rest + (kind === "income" ? amt : -amt);
+    const { day, time } = stamp(month, tz, ps);
+    const label =
+      kind === "expense" ? `Rapprochement du ${longDate(today)}` : `Entrée non répertoriée — rapprochement du ${longDate(today)}`;
+    const entry: Entry = {
+      id: tempId(),
+      kind,
+      amount: amt,
+      label,
+      lineId: kind === "expense" ? unlisted.id : null,
+      lineLabel: kind === "expense" ? unlisted.label : null,
+      direction: null,
+      personId: null,
+      personName: null,
+      day,
+      time,
+      at: new Date().toISOString(),
+    };
+    startTransition(async () => {
+      addOp({ type: "add", entry });
+      const res =
+        kind === "expense"
+          ? await addExpense({ month, amount: amt, label, lineId: unlisted.id })
+          : await addIncome({ month, amount: amt, label });
+      toast(res.ok ? `Rapprochement enregistré : reste disponible ${fmt(real)} FCFA` : res.error);
     });
   }
 
@@ -154,9 +195,15 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
               <span>Voir le budget ›</span>
             </Link>
           )}
+          {isCurrent && unlisted && (
+            <button type="button" className="hero-link" aria-haspopup="dialog" onClick={() => setReconcile(true)}>
+              <span>Rapprocher avec mon argent réel</span>
+              <span>›</span>
+            </button>
+          )}
         </section>
 
-        {view.lines.length === 0 ? (
+        {!view.lines.some((l) => !l.system) ? (
           <div className="quick welcome">
             <h2>Bienvenue dans Mawnytrack</h2>
             <p className="hint">Pour commencer :</p>
@@ -262,7 +309,7 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
           today={today}
           empty={activeFilter ? "Aucune sortie dans cette catégorie ce mois-ci." : "Aucune sortie ce mois-ci. La première saisie apparaîtra ici."}
           onDelete={remove}
-          moveCtx={(e, date) => entryMoveCtx(view, e, date, month, ps)}
+          editCheck={(e, amount, date) => entryEditCheck(view, e, amount, date, month, ps)}
           onEdit={edit}
         />
         <div className="printonly ptotal">
@@ -270,6 +317,14 @@ export function DepensesView({ data, month, monthName, monthTitle, today, tz, ps
           <b className="num">{fmt(filtered)} FCFA</b>
         </div>
       </div>
+      {reconcile && (
+        <ReconcileSheet
+          rest={rest}
+          onClose={() => setReconcile(false)}
+          onExpense={(a) => reconcileWith("expense", a)}
+          onIncome={(a) => reconcileWith("income", a)}
+        />
+      )}
       {preview && (
         <PdfPreview
           pdfUrl={`/depenses/pdf?m=${month}${activeFilter ? `&ligne=${activeFilter}` : ""}`}

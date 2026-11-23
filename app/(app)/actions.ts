@@ -4,7 +4,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { fmt } from "@/lib/format";
-import { APP_TZ, isValidMonth } from "@/lib/month";
+import { APP_TZ, isValidMonth, localDayTime } from "@/lib/month";
 import { currentPeriod, periodStart, type PeriodSettings } from "@/lib/period";
 import { getPeriodSettings, periodBounds, periodKeySql } from "@/lib/period-server";
 import { actionUserId } from "@/lib/session";
@@ -128,6 +128,32 @@ export async function deleteTransaction(id: string): Promise<ActionResult> {
   return done();
 }
 
+/**
+ * Modifie un revenu ou une dépense de la ligne système « Dépenses non répertoriées » (rapprochement) : montant,
+ * libellé, date (même heure locale, jamais dans le futur). Aucun plafond ne s'applique à ces mouvements.
+ * Les prêts et emprunts passent par updateMove (app/(app)/prets/actions.ts), les autres dépenses ne se modifient pas.
+ */
+export async function updateEntry(input: { id: string; amount: number; label: string; date: string }): Promise<ActionResult> {
+  const userId = await actionUserId();
+  const { id, amount, date } = input;
+  if (typeof id !== "string" || !UUID_RE.test(id)) return fail("Opération introuvable.");
+  if (!isAmount(amount)) return fail("Saisissez un montant.");
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) return fail("Date invalide.");
+  const label = cleanText(input.label, 120);
+  const today = localDayTime(new Date(), APP_TZ).day;
+  const res = await db.execute(sql`
+    update transactions t set amount = ${amount}::bigint,
+      label = coalesce(nullif(${label}, ''), t.label),
+      occurred_at = ((${date})::date + (t.occurred_at at time zone ${APP_TZ})::time) at time zone ${APP_TZ}
+    where t.id = ${id} and t.user_id = ${userId} and t.person_id is null
+      and (t.kind = 'income'
+        or (t.kind = 'expense' and t.line_id in (select id from budget_lines where user_id = ${userId} and system is not null)))
+      and ((${date})::date <= (${today})::date or ${date} = to_char(t.occurred_at at time zone ${APP_TZ}, 'YYYY-MM-DD'))
+    returning t.id`);
+  if (!rowsOf(res).length) return fail(date > today ? "La date ne peut pas être dans le futur." : "Modification impossible.");
+  return done();
+}
+
 /* ---------- Budget ---------- */
 
 export async function addLine(input: { label: string; planned: number }): Promise<ActionResult> {
@@ -148,9 +174,17 @@ export async function deleteLine(id: string): Promise<ActionResult> {
   const userId = await actionUserId();
   if (typeof id !== "string" || !UUID_RE.test(id)) return fail("Ligne introuvable.");
   // Les lignes de personnes (volet Prêts) ne se retirent pas depuis le Budget.
+  // Ni les lignes de personnes ni la ligne système « Dépenses non répertoriées »
   await db
     .delete(schema.budgetLines)
-    .where(and(eq(schema.budgetLines.id, id), eq(schema.budgetLines.userId, userId), isNull(schema.budgetLines.personId)));
+    .where(
+      and(
+        eq(schema.budgetLines.id, id),
+        eq(schema.budgetLines.userId, userId),
+        isNull(schema.budgetLines.personId),
+        isNull(schema.budgetLines.system),
+      ),
+    );
   return done();
 }
 
@@ -167,6 +201,12 @@ export async function setPlanned(input: { lineId: string; month: string; planned
   if (!isValidMonth(month)) return fail("Mois invalide.");
   if (planned !== 0 && !isAmount(planned)) return fail("Budget prévu invalide.");
   const lock = db.execute(sql`select id from budget_lines where id = ${lineId} and user_id = ${userId} for update`);
+  // Ligne système « Dépenses non répertoriées » : budget prévu toujours 0 (sans plafond)
+  const [sys] = await db
+    .select({ system: schema.budgetLines.system })
+    .from(schema.budgetLines)
+    .where(and(eq(schema.budgetLines.id, lineId), eq(schema.budgetLines.userId, userId)));
+  if (sys?.system) return fail("Cette ligne n'a pas de budget prévu : elle reste sans plafond.");
   const net = sql`sum(case kind when 'expense' then amount when 'refund' then -amount else 0 end)`;
 
   const ps = await getPeriodSettings(userId);
@@ -190,8 +230,10 @@ export async function setPlanned(input: { lineId: string; month: string; planned
           select coalesce(${net}, 0) as spent from transactions
           where user_id = ${userId} and line_id = ${lineId} and occurred_at >= ${lo} and occurred_at < ${hi}
         ), up as (
-          insert into monthly_budgets (user_id, line_id, month, planned)
-          select ${userId}, ln.id, (${start})::date, ${planned}::bigint from ln, sp, al
+          insert into monthly_budgets (user_id, line_id, month, planned, period_id)
+          select ${userId}, ln.id, (${start})::date, ${planned}::bigint,
+            (select bp.id from budget_periods bp where bp.user_id = ${userId} and bp.month = (${start})::date)
+          from ln, sp, al
           where ${planned}::bigint = 0 or ${planned}::bigint >= greatest(sp.spent, al.spent)
           on conflict (line_id, month) do update set planned = excluded.planned
           returning id

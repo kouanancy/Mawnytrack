@@ -174,7 +174,7 @@ export function SettingsView({ name, email, theme, weeklyEmail, period, version 
         <p className="hint">Le choix est enregistré pour ce compte et appliqué sur chaque appareil connecté.</p>
       </section>
 
-      <BudgetPeriodSettings initial={period} />
+      <BudgetPeriodSettings ps={period} />
 
       <section className="card set" aria-labelledby="s-notifications">
         <h2 id="s-notifications">Notifications</h2>

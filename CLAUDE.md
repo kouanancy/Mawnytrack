@@ -121,28 +121,58 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   Calculé depuis les données déjà chargées (mêmes chiffres que `lineState`, aucune requête de plus). Un appui sur
   une ligne ferme le panneau et fait défiler jusqu'à la carte `#line-<id>`, signalée brièvement (`.flash`).
 
-### Mois budgétaire (`lib/period.ts`, `lib/period-server.ts`)
-- Un « mois » est une période qui commence le jour `user_settings.start_day` (1 à 28, défaut 1) et finit la veille
-  du même jour le mois suivant (migration `006_budget_period.sql`). Clé "YYYY-MM" = nom de la période : mois où
-  elle se termine (`period_naming = 'end'`, défaut) ou où elle commence (`'start'`). Ex. début le 22, nom de
-  fin : « novembre 2026 » = 22 octobre – 21 novembre 2026 ; 22 décembre – 21 janvier = « janvier ». Avec le 1er,
-  les périodes sont les mois du calendrier (comportement d'origine, quel que soit le nom).
-- Une seule logique, jamais de `date_trunc('month', …)` ni de « 1er du mois » écrit à la main :
-  `periodStart` / `periodEnd` / `periodOf` / `currentPeriod` / `periodRange` / `periodTitle` / `dayInPeriod`
-  côté JS ; `periodBounds(key, ps)` (bornes [lo, hi[ en fuseau Africa/Abidjan) et `periodKeySql(col, ps)` (clé
-  d'un instant, même règle que `periodOf`, vérifiée sur 8 000 dates) côté SQL ; `getPeriodSettings(userId)`
-  (une lecture par requête, `cache`). La clé sert aussi de `monthly_budgets.month` (1er jour du mois de la clé).
-- S'applique partout : sélecteur de mois (nom + dates en petit dessous, période du jour par défaut), Dépenses,
-  Revenus, Budget (journal, totaux, reste disponible, lignes épuisées, règle de non-dépassement, budget prévu),
-  saisie sur une période passée datée de son premier jour, budgets figés à la fin de la période, « Remboursé ce
-  mois », Caisse (épargne et graphique par période), relevé mensuel des prêts (« Reste dû au début de la
-  période », « Reste dû au [fin] » ; « Tout le relevé » inchangé), rapport hebdomadaire (« depuis le [début de la
-  période] » ; semaines toujours du lundi au dimanche), titre des sorties imprimées (« novembre 2026 (22 oct. –
-  21 nov.) » ; dates seulement si le mois ne commence pas le 1er).
-- Réglages › Mois budgétaire : liste 1 à 28, nom (Mois de fin / Mois de début, avec exemple), aperçu immédiat
-  (« Mois en cours : novembre 2026, du 22 octobre au 21 novembre 2026 »), confirmation dans la page avant
-  d'enregistrer. Aucune transaction n'est modifiée ; les budgets figés sont effacés dans la même transaction
-  (`setBudgetPeriod`) et refigés selon les nouvelles périodes à la consultation suivante.
+### Mois budgétaire (`lib/period.ts`, `lib/period-server.ts`, migration `008_budget_periods.sql`)
+- Un « mois » est une période enregistrée dans `budget_periods` (clé `month` = 1er jour du mois de la clé, `name`
+  modifiable — NULL = mois de la clé —, `start_date`, `end_date` incluses, `closed_at`). Les périodes s'enchaînent
+  sans trou ni chevauchement : contrainte d'exclusion (`btree_gist`) et déclencheur de contrainte, tous deux vérifiés
+  en fin de transaction ; les clés se suivent de mois en mois (URL `?m=YYYY-MM`, `monthly_budgets.month`, avec
+  `monthly_budgets.period_id`).
+- `user_settings.start_day` (1 à 28) et `period_naming` ne sont qu'une valeur par défaut : ils proposent les dates
+  des nouvelles périodes (`chainEnd` : veille de la première date « start_day » au moins 15 jours après l'ouverture)
+  et prolongent la chaîne avant la première / après la dernière période enregistrée. Changer ce réglage ne modifie
+  jamais une période enregistrée.
+- `getPeriodSettings(userId)` (une lecture par requête, `cache`) charge le réglage et les périodes et crée au besoin
+  les périodes jusqu'à aujourd'hui (sans action, une nouvelle période s'ouvre le lendemain de la clôture de la
+  précédente) ainsi que la ligne système (voir Rapprochement). Migration : périodes du premier mouvement (ou premier
+  budget figé) à aujourd'hui selon l'ancien réglage, budgets figés rattachés (`period_id`), montants conservés.
+- Une seule logique, jamais de `date_trunc('month', …)` ni de « 1er du mois » écrit à la main : `periodDates` /
+  `periodStart` / `periodEnd` / `periodOf` / `currentPeriod` / `periodName` / `periodRange` / `periodTitle` /
+  `isCalendarPeriod` / `dayInPeriod` côté JS ; `periodBounds(key, ps)` (bornes [lo, hi[ en fuseau
+  Africa/Abidjan) et `periodKeySql(col, ps)` (CASE sur les périodes enregistrées puis prolongement, même règle que
+  `periodOf`, vérifiée sur 14 742 instants avec périodes irrégulières) côté SQL. Aucune transaction n'est modifiée :
+  seuls les regroupements changent.
+- S'applique partout : sélecteur de mois (nom + dates réelles dessous), Dépenses, Revenus, Budget, saisie sur une
+  période passée datée de son premier jour, budgets figés à la fin de la période, Caisse (épargne, non dépensé et
+  graphique recalculés), relevés des prêts, rapports, titres et noms des impressions (dates seulement si la période
+  ne suit pas le mois du calendrier).
+- Changer les dates d'une période passée : ses mouvements sont regroupés selon les nouvelles dates, ses budgets
+  prévus restent les siens ; un dépassement qui en résulte n'est pas bloqué : ligne en orange (`.over-dates`,
+  « Dépassement de X FCFA après changement des dates »).
+- Réglages › Mois budgétaire (`components/BudgetPeriodSettings.tsx`) : « Le mois commence le » et le nom (valeur par
+  défaut, « Prochain mois proposé : du … au … ») ; « Dates des mois » du plus récent au plus ancien (nom, « du … au
+  … », nombre de jours, « clôturé », « Modifier »). Modification : Nom, Ouverture, Clôture ; changer l'ouverture
+  déplace la clôture de la précédente (veille), changer la clôture déplace l'ouverture de la suivante (lendemain) ;
+  aperçu « octobre 2026 : 22 sept. – 23 oct. » ; confirmation « Les mouvements de ces mois seront regroupés selon
+  les nouvelles dates. Les montants de la caisse seront recalculés. » ; refus si une période devient vide ou si la
+  clôture précède l'ouverture (`updatePeriod`, contrôlé en JS puis en SQL dans la même transaction).
+- Budget › « Clôturer ce mois » (période en cours) : date de clôture (aujourd'hui par défaut, entre l'ouverture et
+  aujourd'hui), confirmation dans la page ; `closed_at` renseigné, le mois suivant s'ouvre le lendemain avec les
+  budgets prévus par défaut des lignes.
+
+### Rapprochement : ligne « Dépenses non répertoriées »
+- Ligne système par utilisateur (`budget_lines.system = 'unlisted'`, index unique, budget prévu toujours 0) créée
+  par la migration puis par `getPeriodSettings` si elle manque (nouvel utilisateur, « Tout réinitialiser »). Ni
+  supprimable (`deleteLine`) ni renommable, budget non modifiable (`setPlanned`) : sans plafond. En dernier dans le
+  groupe Budget (Dépenses, Budget avec son « Dépensé », badge « Ligne système »). Elle compte comme toute dépense
+  (totaux, reste disponible, épargne et caisse, rapports, impressions). L'écran de bienvenue ne la compte pas.
+- Dépenses › carte « Reste disponible » (période en cours) : « Rapprocher avec mon argent réel » ouvre le panneau
+  `components/ReconcileSheet.tsx` (panneau commun `components/Sheet.tsx`) : « Argent réellement disponible (FCFA) »,
+  « Reste dans Mawnytrack », « Argent réel », « Écart ». Argent réel inférieur : « Enregistrer Z FCFA en dépenses
+  non répertoriées » (dépense par `addExpense` sur la ligne système, « Rapprochement du [date] ») ; supérieur :
+  « Enregistrer Z FCFA en entrée non répertoriée » (revenu « Entrée non répertoriée — rapprochement du [date] ») ;
+  égal : « Les comptes sont équilibrés. ». Le reste disponible devient égal à l'argent réel saisi.
+- Revenus et dépenses de la ligne système se modifient au toucher dans les journaux (`updateEntry`, montant,
+  libellé, date jamais dans le futur) et se suppriment avec confirmation, comme les autres mouvements.
 
 ### Règle essentielle : aucun dépassement de budget
 - Une ligne avec un budget prévu > 0 ne peut jamais avoir un dépensé du mois supérieur à ce budget.
@@ -308,12 +338,13 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   du flux « Mot de passe oublié ? » à l'adresse du compte (`sendPasswordLink`) : le mot de passe ne se modifie que
   par ce lien. « Se déconnecter » et « Se déconnecter de tous les appareils » (`revokeSessions`).
 - Apparence : thème Automatique / Clair / Sombre (voir Design).
-- Mois budgétaire : début et nom de la période (voir Règles métier › Mois budgétaire).
+- Mois budgétaire : valeur par défaut et dates de chaque mois (voir Règles métier › Mois budgétaire).
 - Notifications : rapport hebdomadaire par e-mail (voir Rapports).
 - Données : « Exporter mes données » (`/reglages/export`, JSON unique de toutes les tables de l'utilisateur, sans
   mot de passe ni jeton) ; « Tout réinitialiser » = remise à zéro comme pour une première utilisation : suppression
   dans une seule transaction des transactions (donc prêts, emprunts et remboursements), lignes, budgets figés,
-  personnes, projets, sorties de caisse, mouvements des caisses des projets, rapports hebdomadaires et réglages ; seuls l'e-mail et le mot de passe restent ; autres appareils déconnectés ; retour à Dépenses.
+  périodes, personnes, projets, sorties de caisse, mouvements des caisses des projets, rapports hebdomadaires et
+  réglages (périodes et ligne système recréées à la consultation suivante, selon le réglage par défaut) ; seuls l'e-mail et le mot de passe restent ; autres appareils déconnectés ; retour à Dépenses.
 - Compte : « Supprimer mon compte » efface l'utilisateur et, par cascade, toutes ses données et sessions.
 - Réinitialisation et suppression : double confirmation dans la page (mot « RÉINITIALISER » + mot de passe),
   revérifiée côté serveur (`verifyPassword`), limitée à l'utilisateur de la session.

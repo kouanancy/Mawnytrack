@@ -2,15 +2,11 @@ import Link from "next/link";
 import type { CaisseMonth } from "@/lib/caisse";
 import { fmt, fmtNb } from "@/lib/format";
 import { savingSplit } from "@/lib/ledger";
-import { periodEndLabel, periodRange, type PeriodSettings } from "@/lib/period";
+import { isCalendarPeriod, periodEndLabel, periodName, periodRange, type PeriodSettings } from "@/lib/period";
 
 const shortMonth = (m: string) => {
   const [y, mo] = m.split("-").map(Number);
   return new Date(Date.UTC(y, mo - 1, 1)).toLocaleDateString("fr-FR", { month: "short", timeZone: "UTC" }).replace(".", "");
-};
-const longMonth = (m: string) => {
-  const [y, mo] = m.split("-").map(Number);
-  return new Date(Date.UTC(y, mo - 1, 1)).toLocaleDateString("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" });
 };
 const kfmt = (v: number) => (Math.abs(v) >= 1000 ? `${fmt(v / 1000)} k` : fmt(v));
 
@@ -197,8 +193,8 @@ export function CaisseView({ months, saved, unspent, invested, toProjects, avail
                 <div className="item cm" key={r.month}>
                   <div className="cm-head">
                     <div className="meta">
-                      <b style={{ textTransform: "capitalize" }}>{longMonth(r.month)}</b>
-                      {ps.startDay !== 1 && <span>{periodRange(r.month, ps)}</span>}
+                      <b style={{ textTransform: "capitalize" }}>{periodName(r.month, ps)}</b>
+                      {!isCalendarPeriod(r.month, ps) && <span>{periodRange(r.month, ps)}</span>}
                     </div>
                     <div className="pr">
                       <span className="amt num i">+{fmt(r.saving)}</span>
