@@ -274,30 +274,37 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   à la clôture du mois) » pour le mois en cours (« (ajouté à la caisse le [dernier jour]) » pour un mois clôturé).
 
 ## Investissements (`/investissements`)
-- Deux types d'éléments : les projets (caisse propre, ci-dessous) et les budgets d'événement. Le type
-  « Investissement » a disparu (migration `009_event_budgets.sql` : chaque investissement est devenu un projet,
-  ses sorties de caisse des approvisionnements `fund` de même montant, libellé et date ; caisse principale
-  inchangée). `project_disbursements` reste vide et n'est plus alimentée.
-- Filtre Tout · Budgets · Projets ; résumé du haut selon le filtre (voir Projets ; « Budgets » : total prévu et
-  nombre de budgets). « + Nouveau projet » (nom, montant nécessaire) et « + Nouveau budget » (nom, date facultative).
+- Deux types d'éléments : les projets (caisse propre, ci-dessous) et les budgets. Le type « Investissement » a
+  disparu (migration `009_event_budgets.sql` : chaque investissement est devenu un projet, ses sorties de caisse
+  des approvisionnements `fund` de même montant, libellé et date ; caisse principale inchangée).
+  `project_disbursements` reste vide et n'est plus alimentée.
+- Filtre Tout · Budgets · Projets (`?vue=budgets|projets`) ; résumé du haut selon le filtre (voir Projets ;
+  « Budgets » : total prévu et nombre de budgets). « + Nouveau projet » (nom, montant nécessaire) ; sous la liste des
+  budgets, encadré « Nouveau budget » (un champ, « Créer »).
 
-### Budgets d'événement (`event_budgets`, `event_budget_items`, `lib/event-budgets.ts`, `budget-actions.ts`)
-- Liste indépendante (« Budget fête », « Anniversaire des 10 ans ») : aucun lien avec la caisse, le budget mensuel
-  ni les dépenses. Articles : catégorie, désignation, montant total (ni quantité ni prix unitaire), position.
-- Liste du module : carte par budget (nom, date de l'événement, nombre d'articles, total prévu).
-- Fiche `/investissements/budgets/[id]` (`components/EventBudgetView.tsx`) : retour, nom et date modifiables,
-  icône d'impression ; chiffres clés Articles · Catégories · Total prévu ; articles groupés par catégorie (ordre
-  de la première apparition) avec sous-totaux et total ; ajout (désignation, montant, catégorie avec suggestions
-  `datalist`) ; article modifiable au toucher et supprimable avec confirmation ; ordre par glisser-déposer
-  (poignée, pointeur souris ou doigt, `reorderEventItems`) ou flèches haut et bas sur la poignée ; Notes
-  (enregistrées à la sortie du champ) ; « Dupliquer ce budget » (« (copie) », articles copiés) et « Supprimer ce
-  budget » (confirmation).
-- PDF `/investissements/budgets/[id]/pdf` dans l'aperçu habituel : en-tête logo + « BUDGET D'ÉVÉNEMENT », à
-  droite le nom en grand, « Date de l'événement : … » et « Établi le … » (`rightLines`), trait épais ; trois cases
-  grises (`boxes`) ; tableau Désignation · Montant, titre de catégorie (style `group`, majuscules), « Sous-total »
-  (style `subtotal`), « Total prévu » (style `total`), « Notes : … » ; pied « Mawnytrack · Budget d'événement ·
-  [nom] » (`footerLeft`) et « Page X / Y ». Fichier `Budget-[nom]-[date de l'événement ou du jour].pdf`.
-- Export et « Tout réinitialiser » incluent les budgets d'événement.
+### Budgets (`budgets`, `budget_categories`, `budget_items`, migration `011_budgets.sql`, `lib/budgets.ts`, `budget-actions.ts`)
+- Listes indépendantes (rentrée scolaire, travaux, voyage, fête…) : aucun lien avec la caisse, le budget mensuel ni
+  les dépenses. Budget → catégories (nom, position) → lignes (libellé, montant, position). Migration 011 : chaque
+  ancien budget d'événement devient un budget (même identifiant), ses catégories et articles repris dans l'ordre ;
+  date d'événement et notes abandonnées ; tables `event_budgets` et `event_budget_items` supprimées.
+- Liste : carte par budget (initiale dans un carré vert clair, nom, « X catégories · Y lignes », total à droite).
+  Après « Créer », le budget s'ouvre (`?nouveau`) avec le nom de la première catégorie prêt à la saisie.
+- Fiche `/investissements/budgets/[id]` (`components/BudgetDetailView.tsx`) : retour « Budgets », icône
+  d'impression, nom en grand (modifiable au toucher), « Budget » dessous ; bandeau vert foncé Catégories · Lignes ·
+  Total ; catégories repliables (plusieurs ouvertes à la fois ; fermée : nom, « X lignes », sous-total, chevron qui
+  pivote) ; ouverte : lignes (libellé, montant, corbeille avec confirmation), puis Libellé / Montant / « + » (focus
+  rendu au Libellé) ; vide : « Aucune ligne. Ajoutez la première ci-dessous. » ; « Renommer » et « Supprimer la
+  catégorie » (confirmation dans la page, lignes comprises). Bouton pointillé « + Créer une catégorie » → champ +
+  « Créer » ; la catégorie créée s'ouvre, libellé prêt. Ligne modifiable au toucher du libellé ou par appui long
+  (550 ms). Ordre des catégories et des lignes par glisser-déposer (poignée, souris ou doigt) ou flèches haut et
+  bas sur la poignée. « Total du budget : X FCFA » en gras sous un trait épais ; « Dupliquer ce budget »
+  (« (copie) », catégories et lignes copiées) et « Supprimer ce budget » (confirmation).
+- PDF `/investissements/budgets/[id]/pdf` dans l'aperçu habituel : logo + « BUDGET », à droite le nom en grand et
+  « Établi le … » (`rightLines`), trait épais ; trois cases grises Lignes · Catégories · Total (`boxes`) ; tableau
+  Désignation · Montant, titre de catégorie (style `group`, vert, majuscules), « Sous-total » (style `subtotal`),
+  « Total » (style `total`) ; pied « Mawnytrack · Budget · [nom] » et « Page X / Y ». Fichier
+  `Budget-[nom]-[date].pdf`.
+- Export et « Tout réinitialiser » incluent `budgets`, `budget_categories` et `budget_items`.
 
 ### Projets : caisse propre (`project_moves`, migration `007_project_moves.sql`, `lib/project-cash.ts`)
 - Table `project_moves` (type `fund` = approvisionnement depuis la caisse principale, `out` = sortie du projet,
@@ -322,7 +329,7 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   clôturer » : restitution du solde puis `closed_at`) et « Supprimer ce projet » (l'alloué revient en caisse).
 - Liste : cartes Projet avec le solde en grand, « Alloué X / nécessaire Y » et « Dépensé Z ». Résumé du haut
   selon le filtre : « Tout » garde le résumé d'origine (Disponible en caisse, Déjà investi = alloué aux projets,
-  Reste à financer), sans chiffre des caisses de projets ; « Budgets » : total prévu des budgets d'événement ; « Projets » affiche « Disponible
+  Reste à financer), sans chiffre des caisses de projets ; « Budgets » : total prévu des budgets ; « Projets » affiche « Disponible
   dans la caisse principale », « Dans les caisses des projets » (somme des soldes) et « Dépensé sur les projets ».
   La section « Projets clôturés » (en bas) n'apparaît qu'avec le filtre « Projets ».
 - Rapport (`lib/project-report.ts`, page `/investissements/[id]/rapport?apres=<sortie>` et PDF

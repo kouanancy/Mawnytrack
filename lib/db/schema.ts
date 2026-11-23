@@ -161,22 +161,28 @@ export const weeklyReports = pgTable("weekly_reports", {
   data: jsonb("data").notNull(),
 });
 
-/** Budgets d'événement (009) : listes indépendantes de la caisse, du budget mensuel et des dépenses. */
-export const eventBudgets = pgTable("event_budgets", {
+/** Budgets (011) : listes indépendantes de la caisse, du budget mensuel et des dépenses. */
+export const budgets = pgTable("budgets", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: text("user_id").notNull(),
   name: text("name").notNull(),
-  eventDate: date("event_date", { mode: "string" }),
-  notes: text("notes").notNull().default(""),
   createdAt: tstz("created_at").notNull().defaultNow(),
 });
 
-/** Article d'un budget d'événement : montant total seulement, classé par catégorie, ordre libre (position). */
-export const eventBudgetItems = pgTable("event_budget_items", {
+/** Catégorie d'un budget (ordre libre). */
+export const budgetCategories = pgTable("budget_categories", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   budgetId: uuid("budget_id").notNull(),
   userId: text("user_id").notNull(),
-  category: text("category").notNull(),
+  name: text("name").notNull(),
+  position: integer("position").notNull().default(0),
+});
+
+/** Ligne d'une catégorie : libellé et montant seulement, ordre libre. */
+export const budgetItems = pgTable("budget_items", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  categoryId: uuid("category_id").notNull(),
+  userId: text("user_id").notNull(),
   label: text("label").notNull(),
   amount: money("amount").notNull(),
   position: integer("position").notNull().default(0),
