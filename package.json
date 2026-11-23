@@ -1,6 +1,6 @@
 {
   "name": "mawnytrack",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -14,7 +14,7 @@
     "@neondatabase/serverless": "^1.2.0",
     "better-auth": "^1.7.14",
     "drizzle-orm": "^0.45.4",
-    "next": "^16.4.3",
+    "next": "^16.4.6",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.7.284",
     "pg": "^8.23.1",
