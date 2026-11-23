@@ -14,14 +14,12 @@ import {
   updateName,
   type SettingsResult,
 } from "@/app/settings-actions";
-import { BudgetPeriodSettings } from "@/components/BudgetPeriodSettings";
 import { PasswordInput } from "@/components/PasswordInput";
-import type { PeriodSettings } from "@/lib/period";
 import { useToast } from "@/components/Toast";
 import { authClient } from "@/lib/auth-client";
 import type { Theme } from "@/lib/theme";
 
-type Props = { name: string; email: string; theme: Theme; weeklyEmail: boolean; period: PeriodSettings; version: string };
+type Props = { name: string; email: string; theme: Theme; weeklyEmail: boolean; version: string };
 
 const THEME_OPTIONS: { id: Theme; name: string }[] = [
   { id: "auto", name: "Automatique (selon l'appareil)" },
@@ -43,7 +41,7 @@ function Feedback({ res }: { res: SettingsResult | null }) {
   );
 }
 
-export function SettingsView({ name, email, theme, weeklyEmail, period, version }: Props) {
+export function SettingsView({ name, email, theme, weeklyEmail, version }: Props) {
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -174,7 +172,6 @@ export function SettingsView({ name, email, theme, weeklyEmail, period, version 
         <p className="hint">Le choix est enregistré pour ce compte et appliqué sur chaque appareil connecté.</p>
       </section>
 
-      <BudgetPeriodSettings ps={period} />
 
       <section className="card set" aria-labelledby="s-notifications">
         <h2 id="s-notifications">Notifications</h2>

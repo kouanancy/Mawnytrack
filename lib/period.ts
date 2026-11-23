@@ -1,131 +1,98 @@
-// Mois budgétaire : un « mois » de Mawnytrack est une période enregistrée dans budget_periods (migration 008) :
-// dates d'ouverture et de clôture au choix, sans trou ni chevauchement (l'ouverture d'une période est le
-// lendemain de la clôture de la précédente). Chaque période a une clé "YYYY-MM" (URL ?m=, monthly_budgets.month)
-// et les clés se suivent de mois en mois ; son nom est modifiable (par défaut, le mois de la clé).
-// Le réglage `startDay` (1 à 28) et `naming` ne servent qu'à proposer les dates des nouvelles périodes et à
-// prolonger la chaîne avant la première ou après la dernière période enregistrée.
+// Mois budgétaire : un « mois » de Mawnytrack est une période enregistrée dans budget_periods (migrations 008 et
+// 010). Les mois se suivent sans trou ni chevauchement (l'ouverture d'un mois est le lendemain de la clôture du
+// précédent). Le dernier, le mois en cours, est ouvert (pas de date de fin) jusqu'à ce que l'utilisateur le
+// clôture ; la clôture fixe sa fin au jour même et ouvre le mois suivant le lendemain.
+// Chaque mois a une clé "YYYY-MM" (URL ?m=, monthly_budgets.month) ; les clés se suivent de mois en mois et le nom
+// affiché est celui de la clé (ou un nom enregistré).
+// Autour des mois enregistrés :
+// - mois prévus (après le mois en cours) : ouverture provisoire le même jour du mois que l'ouverture du mois en
+//   cours, n mois plus tard ; on y prépare le budget, sans saisie ;
+// - avant le premier mois : prolongement de mois en mois (même règle, vers le passé).
 // Seule source de calcul des périodes, côté client comme côté serveur (voir aussi lib/period-server.ts).
 import { APP_TZ, addDays, localDayTime, monthLabel, shiftMonth } from "@/lib/month";
 
-export type PeriodNaming = "end" | "start";
-/** Période enregistrée : clé "YYYY-MM", nom (null = nom par défaut), dates "YYYY-MM-DD" incluses. */
-export type StoredPeriod = { id: string; key: string; name: string | null; start: string; end: string; closed: boolean };
-/** Réglage par défaut et périodes enregistrées, triées de la plus ancienne à la plus récente. */
-export type PeriodSettings = { startDay: number; naming: PeriodNaming; periods: StoredPeriod[] };
-export const DEFAULT_PERIOD: PeriodSettings = { startDay: 1, naming: "end", periods: [] };
-
-export const isStartDay = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 28;
+/** Mois enregistré : clé "YYYY-MM", nom (null = mois de la clé), dates "YYYY-MM-DD" incluses ; end null = ouvert. */
+export type StoredPeriod = { id: string; key: string; name: string | null; start: string; end: string | null; closed: boolean };
+/** Mois enregistrés, du plus ancien au plus récent ; le dernier est le mois en cours (ouvert). */
+export type PeriodSettings = { periods: StoredPeriod[] };
+export const DEFAULT_PERIOD: PeriodSettings = { periods: [] };
 
 const pad = (n: number) => String(n).padStart(2, "0");
 /** Nombre de mois de b à a ("YYYY-MM"). */
 export const monthDiff = (a: string, b: string) =>
   (Number(a.slice(0, 4)) - Number(b.slice(0, 4))) * 12 + (Number(a.slice(5, 7)) - Number(b.slice(5, 7)));
-
-/* ---------- Règle par défaut (réglage « Le mois commence le ») ---------- */
-
-/** Décalage (en mois) entre la clé par défaut et le mois où la période commence. */
-const offset = (s: Pick<PeriodSettings, "startDay" | "naming">) => (s.naming === "end" && s.startDay > 1 ? 1 : 0);
-/** Date « startDay » d'un mois "YYYY-MM". */
-const sdDate = (month: string, s: Pick<PeriodSettings, "startDay">) => `${month}-${pad(s.startDay)}`;
-/** Mois de la date « startDay » qui précède ou égale ce jour. */
-const sdMonth = (day: string, s: Pick<PeriodSettings, "startDay">) =>
-  Number(day.slice(8, 10)) >= s.startDay ? day.slice(0, 7) : shiftMonth(day.slice(0, 7), -1);
-
-/** Ouverture par défaut de la période de clé `key`. */
-export const defaultStart = (key: string, s: Pick<PeriodSettings, "startDay" | "naming">) => sdDate(shiftMonth(key, -offset(s)), s);
-/** Clôture par défaut (veille de l'ouverture par défaut suivante). */
-export const defaultEnd = (key: string, s: Pick<PeriodSettings, "startDay" | "naming">) =>
-  addDays(sdDate(shiftMonth(key, 1 - offset(s)), s), -1);
-/** Clé par défaut de la période qui contient ce jour. */
-export const defaultKeyOf = (day: string, s: Pick<PeriodSettings, "startDay" | "naming">) => shiftMonth(sdMonth(day, s), offset(s));
-
-/**
- * Clôture proposée pour une période qui s'ouvre le `start` : veille de la première date « startDay » au moins
- * 15 jours plus tard (ex. début le 22, ouverture le 20 novembre → clôture le 21 décembre).
- */
-export function chainEnd(start: string, s: Pick<PeriodSettings, "startDay">) {
-  const t = addDays(start, 15);
-  let c = sdDate(t.slice(0, 7), s);
-  if (c < t) c = sdDate(shiftMonth(t.slice(0, 7), 1), s);
-  return addDays(c, -1);
-}
-/** Ouverture proposée pour une période qui se clôt le `end` (symétrique de chainEnd). */
-export function chainStart(end: string, s: Pick<PeriodSettings, "startDay">) {
-  const t = addDays(end, -15);
-  let c = sdDate(t.slice(0, 7), s);
-  if (c > t) c = sdDate(shiftMonth(t.slice(0, 7), -1), s);
-  return c;
+const lastDay = (month: string) => Number(addDays(`${shiftMonth(month, 1)}-01`, -1).slice(8, 10));
+/** Même jour du mois, n mois plus tard (borné au dernier jour du mois : 31 → 30 avril). */
+export function addMonths(day: string, n: number) {
+  const m = shiftMonth(day.slice(0, 7), n);
+  return `${m}-${pad(Math.min(Number(day.slice(8, 10)), lastDay(m)))}`;
 }
 
 /**
- * Prolongement de la chaîne hors des périodes enregistrées : la période qui suit la dernière s'ouvre le lendemain
- * de sa clôture (clôture chainEnd), puis les suivantes suivent le réglage par défaut ; de même avant la première.
- * Renvoie aussi l'écart constant clé − mois « startDay » au-delà (utilisé par la requête SQL, même règle).
+ * Clé d'un mois qui s'ouvre ce jour-là quand rien ne le précède : ouverture le 15 ou après → mois suivant
+ * (ouvert le 24 novembre → « décembre 2026 »), sinon mois de l'ouverture.
  */
-export function chainEdges(s: PeriodSettings) {
-  const ps = s.periods;
-  const first = ps[0], last = ps[ps.length - 1];
-  const nextStart = addDays(last.end, 1);
-  const nextEnd = chainEnd(nextStart, s);
-  const prevEnd = addDays(first.start, -1);
-  const prevStart = chainStart(prevEnd, s);
-  return {
-    first,
-    last,
-    next: { key: shiftMonth(last.key, 1), start: nextStart, end: nextEnd },
-    prev: { key: shiftMonth(first.key, -1), start: prevStart, end: prevEnd },
-    /** Au-delà de next : clé = mois « startDay » + afterShift mois */
-    afterShift: monthDiff(shiftMonth(last.key, 2), addDays(nextEnd, 1).slice(0, 7)),
-    /** Avant prev : clé = mois « startDay » + beforeShift mois */
-    beforeShift: monthDiff(shiftMonth(first.key, -2), shiftMonth(prevStart.slice(0, 7), -1)),
-  };
-}
+export const keyForOpening = (day: string) => (Number(day.slice(8, 10)) >= 15 ? shiftMonth(day.slice(0, 7), 1) : day.slice(0, 7));
 
-/* ---------- Périodes (enregistrées ou prolongées) ---------- */
+/** Mois en cours (ouvert), dernier mois enregistré. */
+export const openPeriod = (s: PeriodSettings) => s.periods[s.periods.length - 1] ?? null;
 
-/** Dates de la période de clé `key` : enregistrées, ou prolongement par défaut de la chaîne. */
-export function periodDates(key: string, s: PeriodSettings): { start: string; end: string } {
-  if (!s.periods.length) return { start: defaultStart(key, s), end: defaultEnd(key, s) };
+/**
+ * Dates d'un mois : enregistrées (end null pour le mois en cours), prévues après le mois en cours (ouverture
+ * provisoire, fin la veille de l'ouverture provisoire suivante), ou prolongées avant le premier mois.
+ */
+export function periodDates(key: string, s: PeriodSettings): { start: string; end: string | null } {
   const found = s.periods.find((p) => p.key === key);
   if (found) return found;
-  const e = chainEdges(s);
-  if (key > e.last.key) {
-    if (key === e.next.key) return e.next;
-    // Période régulière : ouverture le « startDay » du mois (clé − afterShift)
-    const m = shiftMonth(key, -e.afterShift);
-    return { start: sdDate(m, s), end: addDays(sdDate(shiftMonth(m, 1), s), -1) };
+  const first = s.periods[0], last = openPeriod(s);
+  if (!first || !last) {
+    // Aucun mois enregistré (cas transitoire) : mois du calendrier
+    return { start: `${key}-01`, end: addDays(`${shiftMonth(key, 1)}-01`, -1) };
   }
-  if (key === e.prev.key) return e.prev;
-  const m = shiftMonth(key, -e.beforeShift);
-  return { start: sdDate(m, s), end: addDays(sdDate(shiftMonth(m, 1), s), -1) };
+  if (key > last.key) {
+    const n = monthDiff(key, last.key);
+    return { start: addMonths(last.start, n), end: addDays(addMonths(last.start, n + 1), -1) };
+  }
+  const n = monthDiff(first.key, key);
+  const start = addMonths(first.start, -n);
+  const end = n === 1 ? addDays(first.start, -1) : addDays(addMonths(first.start, -n + 1), -1);
+  return { start, end };
 }
 
-/** Premier jour de la période "YYYY-MM-DD". */
+/** Premier jour du mois "YYYY-MM-DD" (provisoire pour un mois prévu). */
 export const periodStart = (key: string, s: PeriodSettings) => periodDates(key, s).start;
-/** Dernier jour (inclus) de la période. */
+/** Dernier jour (inclus) ; null pour le mois en cours, encore ouvert. */
 export const periodEnd = (key: string, s: PeriodSettings) => periodDates(key, s).end;
 
-/** Clé de la période qui contient ce jour (même règle que periodKeySql côté SQL). */
+/**
+ * Clé du mois qui contient ce jour (même règle que periodKeySql côté SQL). Tout jour à partir de l'ouverture du
+ * mois en cours lui appartient : tant qu'il est ouvert, toute nouvelle saisie lui revient.
+ */
 export function periodOf(day: string, s: PeriodSettings): string {
-  if (!s.periods.length) return defaultKeyOf(day, s);
-  const e = chainEdges(s);
-  if (day > e.last.end) {
-    if (day <= e.next.end) return e.next.key;
-    return shiftMonth(sdMonth(day, s), e.afterShift);
+  const first = s.periods[0], last = openPeriod(s);
+  if (!first || !last) return day.slice(0, 7);
+  if (day >= last.start) return last.key;
+  if (day < first.start) {
+    // Avant le premier mois : de mois en mois, même jour du mois que son ouverture
+    let n = 1;
+    while (day < addMonths(first.start, -n) && n < 1200) n++;
+    return shiftMonth(first.key, -n);
   }
-  if (day < e.first.start) {
-    if (day >= e.prev.start) return e.prev.key;
-    return shiftMonth(sdMonth(day, s), e.beforeShift);
-  }
-  return s.periods.find((p) => day >= p.start && day <= p.end)!.key;
+  return s.periods.find((p) => day >= p.start && (p.end === null || day <= p.end))!.key;
 }
 
-/** Période en cours (contient la date du jour dans le fuseau de l'application). */
+/** Mois en cours : le mois ouvert (même le jour de la clôture du précédent, avant l'ouverture du suivant). */
 export function currentPeriod(s: PeriodSettings, tz: string = APP_TZ): string {
-  return periodOf(localDayTime(new Date(), tz).day, s);
+  return openPeriod(s)?.key ?? localDayTime(new Date(), tz).day.slice(0, 7);
 }
 
-/** Période enregistrée de cette clé, s'il y en a une. */
+/** État d'un mois : clôturé (ou antérieur), en cours, ou prévu. */
+export function periodStatus(key: string, s: PeriodSettings): "past" | "current" | "future" {
+  const cur = currentPeriod(s);
+  return key < cur ? "past" : key === cur ? "current" : "future";
+}
+
+/** Mois enregistré de cette clé, s'il y en a un. */
 export const storedPeriod = (key: string, s: PeriodSettings) => s.periods.find((p) => p.key === key) ?? null;
 
 /** « 1er » pour le premier jour du mois, comme en français courant. */
@@ -146,46 +113,37 @@ export const longDate = (day: string, year = true) => {
   );
 };
 
-/** La période couvre exactement le mois du calendrier de sa clé (du 1er au dernier jour). */
+/** Le mois couvre exactement le mois du calendrier de sa clé (du 1er au dernier jour). */
 export function isCalendarPeriod(key: string, s: PeriodSettings) {
   const { start, end } = periodDates(key, s);
   return start === `${key}-01` && end === addDays(`${shiftMonth(key, 1)}-01`, -1);
 }
 
-/** « 22 oct. – 21 nov. » */
+/** Dates sous le nom : « 22 oct. – 21 nov. », « depuis le 24 oct. · en cours » ou « prévu à partir du 22 nov. ». */
 export function periodRange(key: string, s: PeriodSettings): string {
   const { start, end } = periodDates(key, s);
-  return `${shortDay(start)} – ${shortDay(end)}`;
+  const st = periodStatus(key, s);
+  if (st === "current") return `depuis le ${shortDay(start)} · en cours`;
+  if (st === "future") return `prévu à partir du ${shortDay(start)}`;
+  return `${shortDay(start)} – ${shortDay(end ?? start)}`;
 }
 
-/** « novembre 2026 » : nom enregistré de la période, sinon le mois de sa clé. */
+/** « novembre 2026 » : nom enregistré du mois, sinon le mois de sa clé. */
 export const periodName = (key: string, s?: PeriodSettings) => (s && storedPeriod(key, s)?.name) || monthLabel(key);
 
-/** « du 22 octobre au 21 novembre 2026 » */
-export function periodSpan(key: string, s: PeriodSettings): string {
-  const { start: a, end: b } = periodDates(key, s);
-  return `du ${longDate(a, a.slice(0, 4) !== b.slice(0, 4))} au ${longDate(b)}`;
-}
-
-/** « 21 novembre 2026 » : dernier jour de la période (clôture, fin de journée). */
-export const periodEndLabel = (key: string, s: PeriodSettings) => longDate(periodEnd(key, s));
-
-/** Titre avec les dates quand la période ne suit pas le calendrier : « novembre 2026 (22 oct. – 21 nov.) ». */
+/** « novembre 2026 (22 oct. – 21 nov.) », « décembre 2026 (depuis le 22 nov. · en cours) » ; dates omises pour un mois du calendrier. */
 export function periodTitle(key: string, s: PeriodSettings): string {
   return isCalendarPeriod(key, s) ? periodName(key, s) : `${periodName(key, s)} (${periodRange(key, s)})`;
 }
 
-/** Nombre de jours d'une période (dates incluses). */
-export const periodDays = (start: string, end: string) => Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) + 1;
-
-/** Date d'une saisie dans une période : aujourd'hui si la période est en cours, sinon son premier jour. */
+/** Date d'une saisie dans un mois : aujourd'hui si le mois le contient, sinon son premier jour. */
 export function dayInPeriod(key: string, s: PeriodSettings, tz: string = APP_TZ): string {
   const today = localDayTime(new Date(), tz).day;
   const { start, end } = periodDates(key, s);
-  return today >= start && today <= end ? today : start;
+  return today >= start && (end === null || today <= end) ? today : start;
 }
 
-/** Clé de période lue dans l'URL (?m=YYYY-MM), sinon la période en cours. */
+/** Clé de mois lue dans l'URL (?m=YYYY-MM), sinon le mois en cours. */
 export function parsePeriod(v: string | string[] | undefined, s: PeriodSettings): string {
   return typeof v === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(v) ? v : currentPeriod(s);
 }

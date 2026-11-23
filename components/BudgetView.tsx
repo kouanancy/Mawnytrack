@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useOptimistic, useState, useTransition } from "react";
 import { addLine, deleteLine, setPlanned } from "@/app/(app)/actions";
-import { updatePeriod } from "@/app/settings-actions";
 import { IcoSearch, IcoTrash } from "@/components/Icons";
 import { matches } from "@/lib/search";
 import { RestSheet } from "@/components/RestSheet";
@@ -18,25 +17,21 @@ type Props = {
   month: string;
   /** Période terminée, en cours ou à venir */
   status: "past" | "current" | "future";
-  /** Dernier jour de la période (« 21 novembre 2026 ») : le non dépensé rejoint la caisse à sa clôture */
-  endLabel: string;
+  /** Dernier jour d'un mois clôturé (« 21 novembre 2026 ») ; null pour le mois en cours (fin à sa clôture) */
+  endLabel: string | null;
   /** « novembre 2026 · 22 oct. – 21 nov. » (titre du détail de l'argent restant) */
   period: string;
-  /** Période en cours enregistrée (« Clôturer ce mois ») et date du jour */
-  closing: { id: string; start: string; today: string } | null;
 };
 
-export function BudgetView({ data, month, status, endLabel, period, closing }: Props) {
+export function BudgetView({ data, month, status, endLabel, period }: Props) {
   const router = useRouter();
   const [view, addOp] = useOptimistic(data, reduce);
   const [, startTransition] = useTransition();
   const toast = useToast();
   const [confirm, setConfirm] = useState<string | null>(null);
   const [adding, setAdding] = useState(!data.lines.some((l) => !l.system));
-  const [closeAsk, setCloseAsk] = useState(false);
   // Recherche dans les lignes (à chaque lettre, sans majuscules ni accents) ; la synthèse reste non filtrée
   const [q, setQ] = useState("");
-  const [closeDay, setCloseDay] = useState(closing?.today ?? "");
   const [detail, setDetail] = useState(false);
   const closeDetail = useCallback(() => setDetail(false), []);
 
@@ -66,7 +61,7 @@ export function BudgetView({ data, month, status, endLabel, period, closing }: P
       </small>
     ) : (
       <small className="num">
-        + non dépensé{status === "current" ? " à ce jour" : ""} : {fmtNb(unspent)}&nbsp;FCFA (ajouté à la caisse le {endLabel})
+        + non dépensé{status === "current" ? " à ce jour" : ""} : {fmtNb(unspent)}&nbsp;FCFA ({endLabel ? <>ajouté à la caisse le {endLabel}</> : <>ajouté à la caisse à la clôture du mois</>})
       </small>
     );
   const borrowed = view.lines.filter((l) => l.direction === "borrowed");
@@ -113,19 +108,6 @@ export function BudgetView({ data, month, status, endLabel, period, closing }: P
       });
       const res = await addLine({ label, planned: p });
       toast(res.ok ? "Ligne ajoutée" : res.error);
-    });
-  }
-
-  /** Clôture du mois en cours à la date choisie : le mois suivant s'ouvre le lendemain (budgets prévus par défaut). */
-  function closeMonth() {
-    if (!closing) return;
-    if (!closeDay || closeDay < closing.start || closeDay > closing.today)
-      return toast("Choisissez une date entre l'ouverture du mois et aujourd'hui");
-    setCloseAsk(false);
-    startTransition(async () => {
-      const r = await updatePeriod({ id: closing.id, start: closing.start, end: closeDay, closing: true });
-      toast(r.ok ? r.message : r.error);
-      if (r.ok) router.refresh();
     });
   }
 
@@ -274,44 +256,6 @@ export function BudgetView({ data, month, status, endLabel, period, closing }: P
           </div>
         )}
       </section>
-
-      {closing && (
-        <div className="pd-close">
-          {closeAsk ? (
-            <div className="danger-box">
-              <p className="hint" style={{ color: "var(--ink)" }}>
-                Le mois se termine à la date choisie ; le mois suivant s&apos;ouvre le lendemain avec les budgets prévus
-                par défaut. Les mouvements datés après la clôture passent au mois suivant.
-              </p>
-              <div className="row" style={{ alignItems: "flex-end", marginTop: 10 }}>
-                <div className="field">
-                  <label htmlFor="close-day">Date de clôture</label>
-                  <input
-                    id="close-day"
-                    type="date"
-                    value={closeDay}
-                    min={closing.start}
-                    max={closing.today}
-                    onChange={(e) => setCloseDay(e.target.value)}
-                  />
-                </div>
-                <div className="confirm" style={{ flexWrap: "wrap" }}>
-                  <button type="button" className="btn sm" onClick={closeMonth} autoFocus>
-                    Confirmer la clôture
-                  </button>
-                  <button type="button" className="btn sm ghost" onClick={() => setCloseAsk(false)}>
-                    Annuler
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <button type="button" className="btn sm ghost" onClick={() => setCloseAsk(true)}>
-              Clôturer ce mois
-            </button>
-          )}
-        </div>
-      )}
 
       {view.lines.length > 1 && (
         <div className="search" role="search">

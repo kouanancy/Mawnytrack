@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { APP_TZ } from "@/lib/month";
 import type { PeriodSettings } from "@/lib/period";
 import { eventBudgetsQuery, toSummaries } from "@/lib/event-budgets-server";
-import { getPeriodSettings, periodKeySql } from "@/lib/period-server";
+import { currentKeySql, getPeriodSettings, periodKeySql } from "@/lib/period-server";
 
 // Caisse, par période (mois budgétaire), revenus `income` seuls (jamais les emprunts) :
 // - épargne prévue = revenus − budget prévu total (valeur figée de monthly_budgets, sinon budget_lines.planned), minimum 0 ;
@@ -77,7 +77,7 @@ const monthsCte = (userId: string, ps: PeriodSettings) => sql`
   first as (
     select min(${periodKeySql(sql`occurred_at`, ps)}) as m from transactions where user_id = ${userId} and kind = 'income'
   ), months as (
-    select generate_series(first.m, ${periodKeySql(sql`now()`, ps)}, interval '1 month')::date as m
+    select generate_series(first.m, ${currentKeySql(ps)}, interval '1 month')::date as m
     from first where first.m is not null
   )`;
 
@@ -99,7 +99,7 @@ const savingsCtes = (userId: string, ps: PeriodSettings) => sql`
   ), sb as (
     select months.m, coalesce(inc.s, 0) as income, coalesce(pl.p, 0) as planned, coalesce(inc.o, 0) as net_out,
       greatest(coalesce(inc.s, 0) - coalesce(pl.p, 0), 0) as plan_saving,
-      months.m < ${periodKeySql(sql`now()`, ps)} as closed
+      months.m < ${currentKeySql(ps)} as closed
     from months left join inc on inc.m = months.m left join pl on pl.m = months.m
   ), sv as (
     -- Période terminée : épargne réelle (revenus − dépenses nettes) ; période en cours : épargne prévue
@@ -124,7 +124,7 @@ function freezePastMonths(userId: string, ps: PeriodSettings) {
     select bl.user_id, bl.id, months.m, bl.planned,
       (select bp.id from budget_periods bp where bp.user_id = ${userId} and bp.month = months.m)
     from months cross join budget_lines bl
-    where bl.user_id = ${userId} and months.m < ${periodKeySql(sql`now()`, ps)}
+    where bl.user_id = ${userId} and months.m < ${currentKeySql(ps)}
     on conflict (line_id, month) do nothing`);
 }
 

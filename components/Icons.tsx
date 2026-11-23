@@ -59,3 +59,9 @@ export const IcoSearch = () => (
     <path d="m20 20-3.5-3.5" />
   </svg>
 );
+export const IcoLock = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...base}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </svg>
+);

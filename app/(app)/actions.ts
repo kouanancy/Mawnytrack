@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { fmt } from "@/lib/format";
 import { APP_TZ, isValidMonth, localDayTime } from "@/lib/month";
-import { currentPeriod, periodStart, type PeriodSettings } from "@/lib/period";
+import { currentPeriod, dayInPeriod, periodName, periodStatus, type PeriodSettings } from "@/lib/period";
 import { getPeriodSettings, periodBounds, periodKeySql } from "@/lib/period-server";
 import { actionUserId } from "@/lib/session";
 
@@ -26,12 +26,20 @@ function done(): ActionResult {
 }
 
 /**
- * Horodatage d'une saisie : maintenant pour le mois budgétaire en cours, sinon le premier jour de la période
- * affichée à l'heure actuelle.
+ * Horodatage d'une saisie : maintenant si le mois contient aujourd'hui, sinon son premier jour à l'heure actuelle
+ * (mois passé, ou nouveau mois en cours le jour de la clôture du précédent : il s'ouvre le lendemain).
  */
 function occurredAt(month: string, ps: PeriodSettings) {
-  if (month === currentPeriod(ps)) return sql`now()`;
-  return sql`(((${periodStart(month, ps)})::date) + (now() at time zone ${APP_TZ})::time) at time zone ${APP_TZ}`;
+  const day = dayInPeriod(month, ps);
+  if (day === localDayTime(new Date(), APP_TZ).day) return sql`now()`;
+  return sql`(((${day})::date) + (now() at time zone ${APP_TZ})::time) at time zone ${APP_TZ}`;
+}
+
+/** Mois prévu (après le mois en cours) : aucune saisie avant sa clôture. */
+function futureError(month: string, ps: PeriodSettings) {
+  return periodStatus(month, ps) === "future"
+    ? `Ce mois s'ouvrira à la clôture de ${periodName(currentPeriod(ps), ps)}.`
+    : null;
 }
 
 /* ---------- Dépenses ---------- */
@@ -50,6 +58,8 @@ export async function addExpense(input: { month: string; amount: number; label: 
   if (typeof lineId !== "string" || !UUID_RE.test(lineId)) return fail("Choisissez une ligne de budget.");
   const label = cleanText(input.label, 120);
   const ps = await getPeriodSettings(userId);
+  const future = futureError(month, ps);
+  if (future) return fail(future);
   const { start, lo, hi } = periodBounds(month, ps);
 
   const [, res] = await db.batch([
@@ -109,12 +119,15 @@ export async function addIncome(input: { month: string; amount: number; label: s
   const userId = await actionUserId();
   if (!isValidMonth(input.month)) return fail("Mois invalide.");
   if (!isAmount(input.amount)) return fail("Saisissez un montant.");
+  const ps = await getPeriodSettings(userId);
+  const future = futureError(input.month, ps);
+  if (future) return fail(future);
   await db.insert(schema.transactions).values({
     userId,
     kind: "income",
     amount: input.amount,
     label: cleanText(input.label, 120) || "Revenu",
-    occurredAt: occurredAt(input.month, await getPeriodSettings(userId)),
+    occurredAt: occurredAt(input.month, ps),
   });
   return done();
 }
@@ -245,7 +258,32 @@ export async function setPlanned(input: { lineId: string; month: string; planned
           (select count(*) from up) as updated
         from ln, sp, al`),
     ]);
+  } else if (month > current) {
+    // Mois prévu : budget préparé pour ce mois seul (gardé à sa clôture du mois en cours) ; aucune dépense possible
+    // d'ici là, seul l'accordé d'une ligne de prêt compte.
+    [, res] = await db.batch([
+      lock,
+      db.execute(sql`
+        with ln as (select id, label from budget_lines where id = ${lineId} and user_id = ${userId}),
+        al as (
+          select coalesce(sum(case t.kind when 'expense' then t.amount when 'refund' then -t.amount else 0 end), 0) as spent,
+            bool_or(true) as lent
+          from transactions t
+          join budget_lines bl on bl.id = t.line_id and bl.user_id = t.user_id
+          join people p on p.id = bl.person_id and p.user_id = bl.user_id and p.direction = 'lent'
+          where t.user_id = ${userId} and t.line_id = ${lineId}
+        ), up as (
+          insert into monthly_budgets (user_id, line_id, month, planned)
+          select ${userId}, ln.id, (${month + "-01"})::date, ${planned}::bigint from ln, al
+          where ${planned}::bigint = 0 or ${planned}::bigint >= al.spent
+          on conflict (line_id, month) do update set planned = excluded.planned
+          returning id
+        )
+        select ln.label, al.spent, coalesce(al.lent, false) as lent, (select count(*) from up) as updated
+        from ln, al`),
+    ]);
   } else {
+    // Mois en cours : budget par défaut de la ligne (et valeur préparée pour ce mois, s'il y en a une)
     const { lo } = periodBounds(current, ps);
     [, res] = await db.batch([
       lock,
@@ -266,11 +304,15 @@ export async function setPlanned(input: { lineId: string; month: string; planned
             where user_id = ${userId} and line_id = ${lineId} and occurred_at >= ${lo}
             group by 1
           ) x
-          where not exists (select 1 from monthly_budgets mb where mb.line_id = ${lineId} and mb.month = x.m)
         ), up as (
           update budget_lines set planned = ${planned}::bigint
           where id = ${lineId} and user_id = ${userId}
             and (${planned}::bigint = 0 or ${planned}::bigint >= (select greatest(sp.spent, al.spent) from sp, al))
+          returning id
+        ), prepared as (
+          update monthly_budgets set planned = ${planned}::bigint
+          where line_id = ${lineId} and user_id = ${userId} and month = (${current + "-01"})::date
+            and exists (select 1 from up)
           returning id
         )
         select ln.label, greatest(sp.spent, al.spent) as spent, coalesce(al.lent, false) as lent,
