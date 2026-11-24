@@ -53,7 +53,9 @@ export function BudgetView({ data, month, status, endLabel, period }: Props) {
   const planned = view.lines.reduce((a, l) => a + l.planned, 0);
   const budget = view.lines.filter((l) => !l.personId);
   const lent = view.lines.filter((l) => l.direction === "lent");
-  const { unspent } = savingSplit(income, planned, out);
+  // Le report « Reste du mois précédent » compte dans les revenus, jamais comme une nouvelle épargne
+  const ownIncome = income - (view.totals.carry ?? 0);
+  const { unspent } = savingSplit(ownIncome, planned, out);
   const unspentNote =
     status === "future" || unspent === 0 ? null : unspent < 0 ? (
       <small className="num">
@@ -250,7 +252,7 @@ export function BudgetView({ data, month, status, endLabel, period }: Props) {
         ) : (
           <div className="saving">
             <span>Épargne supplémentaire</span>
-            <strong className="num">{fmt(income - planned)} FCFA</strong>
+            <strong className="num">{fmt(Math.max(0, ownIncome - planned))} FCFA</strong>
             <small>Part des revenus qui n&apos;est affectée à aucune ligne du budget.</small>
             {unspentNote}
           </div>

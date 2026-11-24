@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { APP_TZ } from "@/lib/month";
 import { currentPeriod, type PeriodSettings } from "@/lib/period";
 import { UNLISTED_INCOME } from "@/lib/ledger";
-import { getPeriodSettings, periodBounds } from "@/lib/period-server";
+import { getPeriodSettings, periodBounds, periodRestSql } from "@/lib/period-server";
 
 // Toutes les lectures d'un écran partent en un seul lot (db.batch = un aller-retour HTTP,
 // une transaction), avec les agrégats calculés en SQL. Chaque requête filtre sur user_id.
@@ -49,6 +49,10 @@ export type Entry = {
   day: string;
   time: string;
   at: string;
+  /** Revenu « Reste du mois précédent » : clé du mois clôturé dont le reste est reporté, et plafond du montant
+   * (reste de ce mois, minimum 0) */
+  carryFrom?: string | null;
+  carryMax?: number;
 };
 
 export type Totals = {
@@ -56,6 +60,8 @@ export type Totals = {
   borrow: number;
   expense: number;
   refund: number;
+  /** Dont reports « Reste du mois précédent » (revenus, jamais une nouvelle épargne) */
+  carry?: number;
   /** Dont entrées non répertoriées (revenus de rapprochement, libellé UNLISTED_INCOME) */
   unlistedIncome?: number;
 };
@@ -150,7 +156,8 @@ function totalsQuery(userId: string, month: string, ps: PeriodSettings) {
       coalesce(sum(amount) filter (where kind = 'borrow'), 0) as borrow,
       coalesce(sum(amount) filter (where kind = 'expense'), 0) as expense,
       coalesce(sum(amount) filter (where kind = 'refund'), 0) as refund,
-      coalesce(sum(amount) filter (where kind = 'income' and label like ${UNLISTED_INCOME + "%"}), 0) as unlisted_income
+      coalesce(sum(amount) filter (where kind = 'income' and label like ${UNLISTED_INCOME + "%"}), 0) as unlisted_income,
+      coalesce(sum(amount) filter (where carry_period_id is not null), 0) as carry
     from transactions
     where user_id = ${userId} and occurred_at >= ${lo} and occurred_at < ${hi}`);
 }
@@ -162,8 +169,11 @@ function entriesQuery(userId: string, month: string, kinds: Kind[], ps: PeriodSe
     select t.id, t.kind, t.amount, t.label, t.line_id, bl.label as line_label, p.direction, t.person_id, p.name as person_name,
       to_char(t.occurred_at at time zone ${APP_TZ}, 'YYYY-MM-DD') as day,
       to_char(t.occurred_at at time zone ${APP_TZ}, 'HH24:MI') as time,
-      t.occurred_at as at
+      t.occurred_at as at,
+      to_char(cp.month, 'YYYY-MM') as carry_from,
+      case when cp.id is not null then greatest(${periodRestSql(userId, sql`cp.start_date`, sql`cp.end_date`)}, 0) end as carry_max
     from transactions t
+    left join budget_periods cp on cp.id = t.carry_period_id and cp.user_id = t.user_id
     left join budget_lines bl on bl.id = t.line_id and bl.user_id = t.user_id
     left join people p on p.id = t.person_id and p.user_id = t.user_id
     where t.user_id = ${userId} and t.kind in (${kindList})
@@ -216,6 +226,7 @@ function toEntry(r: Record<string, unknown>): Entry {
     day: String(r.day),
     time: String(r.time),
     at: new Date(r.at as string).toISOString(),
+    ...(r.carry_from ? { carryFrom: String(r.carry_from), carryMax: n(r.carry_max) } : {}),
   };
 }
 
@@ -246,6 +257,7 @@ export async function getMonthData(userId: string, month: string, journal: Kind[
       expense: n(t.expense),
       refund: n(t.refund),
       unlistedIncome: n(t.unlisted_income),
+      carry: n(t.carry),
     },
     debts: n(debts.rows[0]?.debts),
     entries: entries ? entries.rows.map(toEntry) : [],

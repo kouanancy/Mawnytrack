@@ -122,3 +122,18 @@ export function periodKeySql(col: SQL, s: PeriodSettings): SQL {
     else ${lit(`${last.key}-01`)}
   end)`;
 }
+
+/**
+ * Reste d'un mois sur ses dates (expression SQL scalaire) : revenus (reports compris) + emprunts reçus
+ * − dépenses nettes (expense − refund) des jours `start` à `end` inclus (sans fin : mois ouvert). `start` et `end`
+ * sont des expressions SQL de type date. Sert à la clôture (fenêtre « Clôturer ») et au plafond du report.
+ */
+export const periodRestSql = (userId: string, start: SQL, end: SQL | null) => sql`(
+  select coalesce(sum(case x.kind when 'expense' then -x.amount else x.amount end), 0)
+  from transactions x
+  where x.user_id = ${userId} and (x.occurred_at at time zone ${APP_TZ})::date >= ${start}
+    ${end ? sql`and (x.occurred_at at time zone ${APP_TZ})::date <= ${end}` : sql``}
+)`;
+
+/** Libellé du revenu de report créé à la clôture. */
+export const CARRY_LABEL = "Reste du mois précédent";

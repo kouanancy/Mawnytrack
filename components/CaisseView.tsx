@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { CaisseMonth } from "@/lib/caisse";
 import { fmt, fmtNb } from "@/lib/format";
 import { savingSplit } from "@/lib/ledger";
+import { shiftMonth } from "@/lib/month";
 import { isCalendarPeriod, periodName, periodRange, type PeriodSettings } from "@/lib/period";
 
 const shortMonth = (m: string) => {
@@ -79,7 +80,20 @@ type DetailRow = { label: string; value: string; kind?: "total" | "soft" };
 function PeriodDetail({ r, ps }: { r: CaisseMonth; ps: PeriodSettings }) {
   let rows: DetailRow[];
   let note: string;
-  if (r.closed) {
+  if (r.restRule) {
+    // Mois clôturé avec la fenêtre de clôture : reste du mois − reporté = ajouté à la caisse
+    rows = [
+      { label: "Reste du mois", value: fmt(r.rest) },
+      { label: `− Reporté sur ${periodName(shiftMonth(r.month, 1), ps)}`, value: fmt(r.carried) },
+      { label: "= Ajouté à la caisse", value: fmt(r.saving), kind: "total" },
+    ];
+    note =
+      r.rest <= 0
+        ? "Aucun reste positif à la clôture : rien n'est ajouté à la caisse."
+        : r.carried > 0
+          ? `Reste du mois ${fmtNb(r.rest)} − reporté ${fmtNb(r.carried)} = ajouté à la caisse ${fmtNb(r.saving)}`
+          : "Tout le reste du mois est ajouté à la caisse à la clôture.";
+  } else if (r.closed) {
     rows = [
       { label: "Revenus", value: fmt(r.income) },
       { label: "− Dépenses réelles", value: fmt(r.out) },
@@ -93,7 +107,7 @@ function PeriodDetail({ r, ps }: { r: CaisseMonth; ps: PeriodSettings }) {
     // Période en cours : seule l'épargne prévue compte ; le non dépensé rejoint la caisse à la clôture
     const { unspent } = savingSplit(r.income, r.planned, r.out);
     rows = [
-      { label: "Revenus", value: fmt(r.income) },
+      { label: r.carryIn ? "Revenus (hors report)" : "Revenus", value: fmt(r.income) },
       { label: "− Budget prévu", value: fmt(r.planned) },
       { label: "= Épargne prévue", value: fmt(r.planSaving), kind: "total" },
       { label: "Dépensé à ce jour", value: fmt(r.out) },
@@ -101,7 +115,9 @@ function PeriodDetail({ r, ps }: { r: CaisseMonth; ps: PeriodSettings }) {
         ? { label: "Dépenses hors budget à ce jour", value: fmt(-unspent), kind: "soft" }
         : { label: "Non dépensé à ce jour", value: fmt(unspent), kind: "soft" },
     ];
-    note = "Ajouté à la caisse à la clôture du mois pour la part restant non dépensée";
+    note = r.carryIn
+      ? `Report du mois précédent (${fmtNb(r.carryIn)}) : compté dans le reste du mois, ajouté à la caisse à la clôture pour la part non dépensée`
+      : "Ajouté à la caisse à la clôture du mois pour la part restant non dépensée";
   }
   return (
     <>

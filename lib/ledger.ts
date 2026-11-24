@@ -2,7 +2,7 @@
 // Les mêmes règles sont appliquées côté serveur en SQL (lib/data.ts, app/(app)/actions.ts).
 import type { Direction, Entry, Line, MonthData, Totals } from "@/lib/data";
 import { fmt } from "@/lib/format";
-import { localDayTime } from "@/lib/month";
+import { localDayTime, monthLabel } from "@/lib/month";
 import { dayInPeriod, periodOf, periodTitle, type PeriodSettings } from "@/lib/period";
 
 /** Début du libellé d'une entrée non répertoriée (revenu de rapprochement). */
@@ -58,6 +58,7 @@ const totalKey = { income: "income", borrow: "borrow", expense: "expense", refun
 
 function apply(data: MonthData, e: Entry, sign: 1 | -1): MonthData {
   const totals = { ...data.totals, [totalKey[e.kind]]: data.totals[totalKey[e.kind]] + sign * e.amount };
+  if (e.carryFrom) totals.carry = (data.totals.carry ?? 0) + sign * e.amount;
   // Emprunt reçu : sans ligne, rattaché à la ligne de sa personne
   const lines = data.lines.map((l) =>
     l.id === e.lineId || (e.personId != null && l.personId === e.personId)
@@ -143,6 +144,7 @@ export const isTemp = (id: string) => id.startsWith("tmp-");
 
 /** Catégorie affichée dans le journal. */
 export function category(e: Entry): string {
+  if (e.carryFrom) return `Reporté à la clôture de ${monthLabel(e.carryFrom)}`;
   if (e.kind === "income") return "Revenu";
   if (e.kind === "borrow") return `Emprunt · ${e.personName ?? ""}`;
   if (!e.lineLabel) return "Sans ligne";
@@ -153,6 +155,7 @@ export function category(e: Entry): string {
 
 /** Message de confirmation de suppression. */
 export function deleteNotice(e: Entry): string {
+  if (e.carryFrom) return "Tout le reste du mois clôturé retournera dans la caisse.";
   if (e.kind === "borrow") return "L'emprunt sera aussi retiré du volet Prêts.";
   if (e.kind === "expense" && e.direction === "lent") return "Le prêt correspondant sera aussi retiré.";
   if (e.kind === "refund" || (e.kind === "expense" && e.direction === "borrowed"))
@@ -307,6 +310,12 @@ export function entryEditCheck(data: MonthData, e: Entry, amount: number, date: 
   if (isMove(e)) {
     const ctx = entryMoveCtx(data, e, date, month, ps);
     return ctx ? checkMove(ctx, amount) : null;
+  }
+  // Report « Reste du mois précédent » : montant seul, jamais au-dessus du reste du mois clôturé
+  if (e.carryFrom) {
+    const max = e.carryMax ?? 0;
+    if (amount > max) return { ok: false, bad: true, hint: `Au plus ${fmt(max)} FCFA : reste du mois clôturé.` };
+    return amount > 0 ? { ok: true, bad: false, hint: "" } : { ok: false, bad: false, hint: "" };
   }
   const simple = e.kind === "income" || (e.kind === "expense" && data.lines.some((l) => l.id === e.lineId && l.system));
   if (!simple) return null;

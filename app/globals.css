@@ -679,11 +679,22 @@ details.add form > .field{flex:none}
 .close-btn:hover{background:var(--out-soft)}
 .close-btn[aria-expanded="true"]{background:var(--out-soft)}
 .close-btn:focus-visible{outline:2px solid var(--out);outline-offset:2px}
-.close-box{background:var(--out-soft);border:1px solid var(--out);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
-.close-box p{margin:0;font-size:14px;color:var(--ink)}
-.close-box .confirm{margin-top:6px}
+/* Fenêtre de clôture du mois (components/CloseSheet.tsx) */
+.cl{display:flex;flex-direction:column;gap:14px}
+.cl .field{flex:none}
+.cl .hint{margin:0}
+.cl-rest{background:var(--hero);color:var(--hero-ink);border-radius:14px;padding:14px 16px;display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.cl-rest span{font-size:14px;font-weight:600;color:var(--hero-muted)}
+.cl-rest strong{font-family:var(--f-display);font-size:24px;font-weight:800;letter-spacing:-.02em}
+.cl-amt{display:flex;align-items:center;gap:8px;min-width:0}
+.cl-amt input{flex:1 1 auto;min-width:0;font-weight:700;font-size:18px}
+.cl-amt span{flex:none;font-weight:700;color:var(--muted)}
+.cl-none{padding:10px 12px;border-radius:12px;background:var(--surface-2);color:var(--ink)}
+.cl-actions{flex-wrap:wrap}
+.cl-actions .btn{flex:1 1 140px}
+/* Revenu « Reste du mois précédent » (report à la clôture) */
+.item.carry{background:var(--in-soft)}
 .toast-act{flex:none;border:0;background:none;color:inherit;font:inherit;font-weight:800;text-decoration:underline;cursor:pointer;padding:4px}
-.page-head .close-box{flex:1 0 100%;order:3}
 .toast{width:max-content;max-width:min(460px, calc(100vw - 32px))}
 
 /* Budgets : cartes de la liste et création */
