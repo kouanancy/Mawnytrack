@@ -19,7 +19,10 @@ export function MoveEditForm({
   check: validate,
   onSave,
   onCancel,
+  amountOnly = false,
 }: {
+  /** Montant seul (report « Reste du mois précédent ») : libellé et date inchangés */
+  amountOnly?: boolean;
   title: string;
   initial: MoveEdit;
   today: string;
@@ -64,15 +67,19 @@ export function MoveEditForm({
             onChange={(e) => setAmount(formatInput(e.target.value))}
           />
         </div>
+        {!amountOnly && (
         <div className="field">
           <label htmlFor="me-d">Date</label>
           <input id="me-d" type="date" required value={date} max={date > today ? date : today} onChange={(e) => setDate(e.target.value)} />
         </div>
+        )}
       </div>
-      <div className="field">
-        <label htmlFor="me-l">Libellé</label>
-        <input id="me-l" maxLength={120} autoComplete="off" value={label} onChange={(e) => setLabel(e.target.value)} />
-      </div>
+      {!amountOnly && (
+        <div className="field">
+          <label htmlFor="me-l">Libellé</label>
+          <input id="me-l" maxLength={120} autoComplete="off" value={label} onChange={(e) => setLabel(e.target.value)} />
+        </div>
+      )}
       {(check.bad || future) && (
         <p className="hint num" aria-live="polite">
           <span className="bad">{future ? "La date ne peut pas être dans le futur." : check.hint}</span>

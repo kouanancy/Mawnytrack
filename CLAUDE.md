@@ -136,7 +136,7 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   Calculé depuis les données déjà chargées (mêmes chiffres que `lineState`, aucune requête de plus). Un appui sur
   une ligne ferme le panneau et fait défiler jusqu'à la carte `#line-<id>`, signalée brièvement (`.flash`).
 
-### Mois budgétaire (`lib/period.ts`, `lib/period-server.ts`, `app/month-actions.ts`, migrations 008 et 010)
+### Mois budgétaire (`lib/period.ts`, `lib/period-server.ts`, `app/month-actions.ts`, migrations 008, 010 et 012)
 - Un « mois » est une période enregistrée dans `budget_periods` (clé `month` = 1er jour du mois de la clé, `name`
   — NULL = mois de la clé —, `start_date`, `end_date` incluses, `closed_at`). Sans trou ni chevauchement :
   contrainte d'exclusion (`btree_gist`) et déclencheur de contrainte vérifiés en fin de transaction ; un seul mois
@@ -144,11 +144,25 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   mois (URL `?m=YYYY-MM`, `monthly_budgets.month`, `monthly_budgets.period_id`).
 - Le mois en cours n'a pas de fin (`end_date` NULL) : il reste ouvert jusqu'à sa clôture, sans limite. Toute date
   à partir de son ouverture lui appartient : tant qu'il est ouvert, toute nouvelle saisie lui revient.
-- Clôture (`closeMonth`, barre du mois) : fin du mois à la date du jour (`closed_at`), budgets prévus figés, mois
-  suivant (clé + 1) ouvert le lendemain avec les budgets préparés pour lui (sinon ceux par défaut des lignes). Une
-  seule clôture par mois (la clé doit être celle du mois ouvert, ouvert au plus tard aujourd'hui). Annulation
-  (`reopenMonth`, lien « Annuler » de la notification pendant 6 secondes) seulement si aucun mouvement n'a été
-  saisi dans le nouveau mois. Le jour de la clôture, une saisie dans le nouveau mois est datée de son ouverture.
+- Clôture (`closeMonth`, fenêtre de clôture) : fin du mois à la date du jour (`closed_at`, `rest_to_cash`), budgets
+  prévus figés, mois suivant (clé + 1) ouvert le lendemain avec les budgets préparés pour lui (sinon ceux par défaut
+  des lignes), et report éventuel, le tout en une seule instruction SQL. Une seule clôture par mois (la clé doit être
+  celle du mois ouvert, ouvert au plus tard aujourd'hui). Le jour de la clôture, une saisie dans le nouveau mois est
+  datée de son ouverture.
+- Report du reste (migration `012_carry_over.sql`) : à la clôture, l'utilisateur choisit le montant X (0 par défaut,
+  jamais au-dessus du reste du mois) reporté en revenu sur le mois suivant ; le reste du mois − X va dans la caisse
+  (voir Caisse). Reste du mois = reste disponible à la clôture : revenus (reports compris) + emprunts − dépenses
+  nettes (`periodRestSql` dans `lib/period-server.ts`, `closingInfo` pour la fenêtre). X > 0 : revenu `income`
+  « Reste du mois précédent » (`CARRY_LABEL`), daté de l'ouverture du mois suivant (00:00), lié au mois clôturé
+  (`transactions.carry_period_id`, un seul par mois, clé étrangère composite). Il compte dans les revenus et le reste
+  disponible du nouveau mois (Dépenses, Revenus, Budget, rapports, impressions, export), jamais comme une nouvelle
+  épargne (exclu de l'épargne prévue de la Caisse et de l'« Épargne supplémentaire » du Budget, `Totals.carry`).
+  Revenus : ligne sur fond `--in-soft` (`.item.carry`), « Reporté à la clôture de [mois] » ; modifiable au toucher,
+  montant seul (`MoveEditForm` `amountOnly`), au plus le reste du mois clôturé (`Entry.carryMax`, `entryEditCheck`,
+  `updateEntry` côté serveur) ; supprimable : tout le reste retourne alors dans la caisse.
+- Annulation (`reopenMonth`, lien « Annuler » de la notification pendant 6 secondes) seulement si aucun autre
+  mouvement que le report n'a été saisi dans le nouveau mois : supprime le report, retire la part de caisse
+  (`rest_to_cash` remis à faux) et rouvre le mois.
 - Nom automatique (premier mois, nouvel utilisateur ou « Tout réinitialiser ») : ouverture le 15 ou après → mois
   suivant (ouvert le 24 novembre → « décembre 2026 »), sinon mois de l'ouverture (`keyForOpening`). Ensuite, chaque
   nouveau mois prend le nom qui suit celui du mois clôturé, même s'il s'ouvre avant le 15 (jamais de doublon).
@@ -167,10 +181,15 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   `periodKeySql(col, ps)` (même règle que `periodOf`, vérifiée sur 19 920 instants) côté SQL.
 - Barre du mois (Dépenses, Revenus, Budget) : sous le nom, « 22 oct. – 21 nov. » (clôturé), « depuis le 24 oct. ·
   en cours » ou « prévu à partir du 22 nov. ». À côté, sur le mois en cours seulement (et pas le jour même où il a
-  été créé par une clôture) : bouton « Clôturer » (cadenas, bordure et texte `--out`, hauteur du sélecteur) ;
-  encadré de confirmation dessous (« Clôturer [mois] aujourd'hui, [date] ? » / « [mois suivant] commencera demain,
-  le [date], avec les budgets prévus. », « Clôturer » et « Annuler ») ; après validation, le sélecteur passe sur le
-  nouveau mois et la notification « [Mois] est clôturé. [Mois suivant] commence le [date]. » propose « Annuler ».
+  été créé par une clôture) : bouton « Clôturer » (cadenas, bordure et texte `--out`, hauteur du sélecteur) qui
+  ouvre la fenêtre de clôture `components/CloseSheet.tsx` (panneau commun `Sheet` : monte du bas sur téléphone,
+  centrée à partir de 768 px, fond assombri ; croix, « Annuler », Échap ou appui sur le fond). Contenu, rien
+  d'autre : titre « Clôturer [mois] » et croix ; « Du [ouverture] au [aujourd'hui] (aujourd'hui) » ; bandeau vert
+  foncé « Reste du mois : X FCFA » ; champ « Montant à reporter en revenu sur [mois suivant] » (0 par défaut,
+  « FCFA » à droite, focus, bouton désactivé au-dessus du reste) ; « Clôturer le mois » (orange rosé) et
+  « Annuler ». Reste nul ou négatif : pas de champ, « Aucun reste positif : rien n'est envoyé dans la caisse ni
+  reporté. ». Après validation, le sélecteur passe sur le nouveau mois et la notification « [Mois] clôturé : Y FCFA
+  dans la caisse, X FCFA reportés en revenu. » (ou « Y FCFA dans la caisse. ») propose « Annuler ».
 - Plus aucun réglage des mois : la partie « Mois budgétaire » des Réglages et « Clôturer ce mois » du Budget ont
   disparu (`user_settings.start_day` et `period_naming` ne servent plus).
 - Un dépassement de budget sur un mois clôturé (données anciennes) n'est pas bloqué : ligne en orange
@@ -246,14 +265,20 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   journaux (opération `edit` du réducteur).
 
 ## Caisse (`/caisse`, `lib/caisse.ts`)
-- Par période (mois budgétaire), revenus `income` seuls (jamais les emprunts) :
+- Par période (mois budgétaire), revenus `income` seuls, hors reports (jamais les emprunts, sauf dans le reste du
+  mois des mois clôturés avec la fenêtre de clôture) :
   - « Épargne prévue » = revenus − budget prévu total de la période (valeurs figées de `monthly_budgets` pour les
     périodes terminées, figées à la consultation), minimum 0 ;
   - période terminée : épargne = revenus − dépenses nettes réelles (`expense` − `refund`), minimum 0, soit
     l'épargne prévue + le « non dépensé » (aucune ligne ne dépassant son budget, il est normalement positif ;
     négatif seulement si des lignes sans plafond l'emportent : affiché « dépenses hors budget ») ;
   - mois en cours : épargne = épargne prévue ; le non dépensé n'est ajouté qu'à la clôture du mois (bouton
-    « Clôturer ») — même règle partout (`savingSplit` dans `lib/ledger.ts` côté interface).
+    « Clôturer ») — même règle partout (`savingSplit` dans `lib/ledger.ts` côté interface) ;
+  - mois clôturé avec la fenêtre de clôture (`budget_periods.rest_to_cash`, migration 012) : ajouté à la caisse =
+    reste du mois (revenus, reports compris, + emprunts − dépenses nettes) − montant reporté, minimum 0 (au lieu de
+    l'épargne prévue + le non dépensé, qui restent la règle des mois clôturés avant) ;
+  - les revenus de report (`carry_period_id`) ne sont jamais une nouvelle épargne : exclus des revenus de l'épargne
+    prévue ; seul ce qui en reste à la clôture suivante repart vers la caisse (aucun double comptage).
 - Disponible en caisse = somme des épargnes, de la première période ayant un revenu à la période en cours,
   − toutes les sorties vers les investissements (`project_disbursements`) − les approvisionnements des projets
   + leurs restitutions (`project_moves`, voir Investissements › Projets). Historique calculé en une seule requête
@@ -268,7 +293,9 @@ fait référence pour le design, les textes et le comportement : le reproduire f
   - période en cours : Revenus, − Budget prévu, = Épargne prévue (gras), Dépensé à ce jour, Non dépensé à ce jour
     (gris), mention « Ajouté à la caisse à la clôture du mois pour la part restant non dépensée » ;
   - période terminée : Revenus, − Dépenses réelles, = Épargne de la période (gras), puis « dont épargne prévue X
-    + non dépensé Y » ;
+    + non dépensé Y » ; mois clôturé avec report : Reste du mois, − Reporté sur [mois suivant], = Ajouté à la caisse
+    (gras), puis « Reste du mois X − reporté Z = ajouté à la caisse Y » ; période en cours avec un report reçu :
+    « Revenus (hors report) » et mention du report ;
   - « Sorties vers les investissements : X » en dessous quand la période en a.
 - Budget › « Épargne supplémentaire » : épargne prévue, puis « + non dépensé à ce jour : X FCFA (ajouté à la caisse
   à la clôture du mois) » pour le mois en cours (« (ajouté à la caisse le [dernier jour]) » pour un mois clôturé).

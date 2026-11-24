@@ -95,6 +95,8 @@ export const budgetPeriods = pgTable("budget_periods", {
   /** NULL : mois en cours, ouvert jusqu'à sa clôture (010) */
   endDate: date("end_date", { mode: "string" }),
   closedAt: tstz("closed_at"),
+  /** Mois clôturé avec la fenêtre de clôture : part de caisse = reste du mois − montant reporté (012) */
+  restToCash: boolean("rest_to_cash").notNull().default(false),
   createdAt: tstz("created_at").notNull().defaultNow(),
 });
 
@@ -106,6 +108,8 @@ export const transactions = pgTable("transactions", {
   label: text("label").notNull().default(""),
   lineId: uuid("line_id"),
   personId: uuid("person_id"),
+  /** Revenu « Reste du mois précédent » : mois clôturé dont le reste est reporté (012) */
+  carryPeriodId: uuid("carry_period_id"),
   occurredAt: tstz("occurred_at").notNull().defaultNow(),
   createdAt: tstz("created_at").notNull().defaultNow(),
 });

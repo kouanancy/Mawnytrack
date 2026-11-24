@@ -92,6 +92,7 @@ export function Journal({
                     <MoveEditForm
                       title={category(e)}
                       initial={{ amount: e.amount, label: e.label, date: e.day }}
+                      amountOnly={!!e.carryFrom}
                       today={today}
                       check={(amount, date) => editCheck!(e, amount, date) ?? { ok: false, bad: false, hint: "" }}
                       onCancel={() => setEditing(null)}
@@ -121,7 +122,7 @@ function Row({ e, onAsk, onEdit }: { e: Entry; onAsk: () => void; onEdit?: () =>
   const body = (
     <>
       <span className={`ico ${out ? "o" : "i"}`} aria-hidden="true">
-        {cat.replace(/^(Prêt|Remboursement|Emprunt) · /, "").slice(0, 2)}
+        {e.carryFrom ? "Re" : cat.replace(/^(Prêt|Remboursement|Emprunt) · /, "").slice(0, 2)}
       </span>
       <span className="meta">
         <b>{e.label}</b>
@@ -136,7 +137,7 @@ function Row({ e, onAsk, onEdit }: { e: Entry; onAsk: () => void; onEdit?: () =>
     </>
   );
   return (
-    <div className={`item${pending ? " fresh" : ""}`}>
+    <div className={`item${pending ? " fresh" : ""}${e.carryFrom ? " carry" : ""}`}>
       {onEdit ? (
         <button type="button" className="item-hit" aria-label={`Modifier ${e.label}, ${fmt(e.amount)} FCFA`} onClick={onEdit}>
           {body}

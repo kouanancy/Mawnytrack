@@ -6,7 +6,7 @@ import { db, schema } from "@/lib/db";
 import { fmt } from "@/lib/format";
 import { APP_TZ, isValidMonth, localDayTime } from "@/lib/month";
 import { currentPeriod, dayInPeriod, periodName, periodStatus, type PeriodSettings } from "@/lib/period";
-import { getPeriodSettings, periodBounds, periodKeySql } from "@/lib/period-server";
+import { getPeriodSettings, periodBounds, periodKeySql, periodRestSql } from "@/lib/period-server";
 import { actionUserId } from "@/lib/session";
 
 export type ActionResult = { ok: true; id?: string } | { ok: false; error: string };
@@ -154,16 +154,29 @@ export async function updateEntry(input: { id: string; amount: number; label: st
   if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) return fail("Date invalide.");
   const label = cleanText(input.label, 120);
   const today = localDayTime(new Date(), APP_TZ).day;
+  // Report « Reste du mois précédent » : montant seul, au plus le reste du mois clôturé (minimum 0)
+  const carryMax = sql`(select greatest(${periodRestSql(userId, sql`cp.start_date`, sql`cp.end_date`)}, 0)
+    from budget_periods cp where cp.id = t.carry_period_id and cp.user_id = t.user_id)`;
   const res = await db.execute(sql`
     update transactions t set amount = ${amount}::bigint,
-      label = coalesce(nullif(${label}, ''), t.label),
-      occurred_at = ((${date})::date + (t.occurred_at at time zone ${APP_TZ})::time) at time zone ${APP_TZ}
+      label = case when t.carry_period_id is null then coalesce(nullif(${label}, ''), t.label) else t.label end,
+      occurred_at = case when t.carry_period_id is null
+        then ((${date})::date + (t.occurred_at at time zone ${APP_TZ})::time) at time zone ${APP_TZ}
+        else t.occurred_at end
     where t.id = ${id} and t.user_id = ${userId} and t.person_id is null
+      and (t.carry_period_id is null or ${amount}::bigint <= ${carryMax})
       and (t.kind = 'income'
         or (t.kind = 'expense' and t.line_id in (select id from budget_lines where user_id = ${userId} and system is not null)))
       and ((${date})::date <= (${today})::date or ${date} = to_char(t.occurred_at at time zone ${APP_TZ}, 'YYYY-MM-DD'))
     returning t.id`);
-  if (!rowsOf(res).length) return fail(date > today ? "La date ne peut pas être dans le futur." : "Modification impossible.");
+  if (!rowsOf(res).length) {
+    const c = rowsOf(
+      await db.execute(sql`select ${carryMax} as max from transactions t
+        where t.id = ${id} and t.user_id = ${userId} and t.carry_period_id is not null`),
+    )[0];
+    if (c) return fail(`Montant trop élevé : au plus ${fmt(Number(c.max))} FCFA, reste du mois clôturé.`);
+    return fail(date > today ? "La date ne peut pas être dans le futur." : "Modification impossible.");
+  }
   return done();
 }
 

@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { closeMonth, reopenMonth } from "@/app/month-actions";
 import { Brand } from "@/components/Brand";
+import { CloseSheet } from "@/components/CloseSheet";
 import { IcoBack, IcoCheck, IcoChev, IcoLock, IcoMenu } from "@/components/Icons";
 import { useToast } from "@/components/Toast";
-import { addDays, localDayTime, monthLabel, shiftMonth } from "@/lib/month";
+import { localDayTime, monthLabel, shiftMonth } from "@/lib/month";
 import { longDate, periodName, periodRange, periodStart, type PeriodSettings } from "@/lib/period";
 import { SECTIONS, SETTINGS } from "@/lib/sections";
 import { useNav } from "@/lib/use-nav";
@@ -26,16 +27,15 @@ export function Header({ current, ps }: { current: string; ps: PeriodSettings })
   const [ask, setAsk] = useState(false);
   const [pending, startTransition] = useTransition();
   const today = localDayTime(new Date(), "Africa/Abidjan").day;
-  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
   // Bouton « Clôturer » : uniquement sur le mois en cours, dans les sections à sélecteur de mois
   // (pas le jour même d'une clôture : le nouveau mois ne s'ouvre que le lendemain)
   const canClose = section.month && pathname === section.href && month === current && periodStart(current, ps) <= today;
 
   /** Clôture du mois en cours aujourd'hui ; le sélecteur passe sur le nouveau mois, « Annuler » pendant 6 secondes. */
-  function close() {
-    setAsk(false);
+  function close(carry: number) {
     startTransition(async () => {
-      const r = await closeMonth(current);
+      const r = await closeMonth(current, carry);
+      setAsk(false);
       if (!r.ok) return toast(r.error);
       router.push(pathname, { scroll: false });
       router.refresh();
@@ -146,9 +146,10 @@ export function Header({ current, ps }: { current: string; ps: PeriodSettings })
             <button
               type="button"
               className="close-btn"
+              aria-haspopup="dialog"
               aria-expanded={ask}
               disabled={pending}
-              onClick={() => setAsk((a) => !a)}
+              onClick={() => setAsk(true)}
             >
               <IcoLock /> Clôturer
             </button>
@@ -157,24 +158,15 @@ export function Header({ current, ps }: { current: string; ps: PeriodSettings })
         )}
       </header>
       {canClose && ask && (
-        <div className="close-box" role="dialog" aria-label="Clôturer le mois">
-          <p>
-            <b>
-              Clôturer {cap(periodName(current, ps))} aujourd&apos;hui, {longDate(today)} ?
-            </b>
-          </p>
-          <p>
-            {cap(monthLabel(shiftMonth(current, 1)))} commencera demain, le {longDate(addDays(today, 1))}, avec les budgets prévus.
-          </p>
-          <div className="confirm">
-            <button type="button" className="btn sm out" autoFocus disabled={pending} onClick={close}>
-              Clôturer
-            </button>
-            <button type="button" className="btn sm ghost" onClick={() => setAsk(false)}>
-              Annuler
-            </button>
-          </div>
-        </div>
+        <CloseSheet
+          monthKey={current}
+          title={`Clôturer ${periodName(current, ps)}`}
+          range={`Du ${longDate(periodStart(current, ps))} au ${longDate(today)} (aujourd'hui)`}
+          nextName={monthLabel(shiftMonth(current, 1))}
+          pending={pending}
+          onConfirm={close}
+          onClose={() => setAsk(false)}
+        />
       )}
       <h1 className="section-title">{section.name}</h1>
     </div>

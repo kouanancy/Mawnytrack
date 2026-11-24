@@ -6,11 +6,13 @@ import type { PeriodSettings } from "@/lib/period";
 import { budgetsQuery, toSummaries } from "@/lib/budgets-server";
 import { currentKeySql, getPeriodSettings, periodKeySql } from "@/lib/period-server";
 
-// Caisse, par période (mois budgétaire), revenus `income` seuls (jamais les emprunts) :
+// Caisse, par période (mois budgétaire), revenus `income` seuls, hors reports (jamais les emprunts) :
 // - épargne prévue = revenus − budget prévu total (valeur figée de monthly_budgets, sinon budget_lines.planned), minimum 0 ;
 // - période terminée : épargne = revenus − dépenses nettes réelles (expense − refund), minimum 0,
 //   soit l'épargne prévue + le non dépensé ;
-// - période en cours : épargne = épargne prévue ; le non dépensé n'est ajouté qu'à la clôture.
+// - période en cours : épargne = épargne prévue ; le non dépensé n'est ajouté qu'à la clôture ;
+// - mois clôturé avec la fenêtre de clôture (rest_to_cash, 012) : reste du mois (revenus, reports compris,
+//   + emprunts − dépenses nettes) − montant reporté en revenu sur le mois suivant, minimum 0.
 // Disponible en caisse = somme des épargnes, de la première période ayant un revenu à la période en cours,
 // − toutes les sorties vers les investissements (project_disbursements)
 // − les approvisionnements des projets + leurs restitutions (project_moves 'fund' / 'back').
@@ -31,6 +33,14 @@ export type CaisseMonth = {
   saving: number;
   /** Période terminée (le non dépensé est acquis) */
   closed: boolean;
+  /** Mois clôturé avec la fenêtre de clôture : épargne = reste du mois − reporté (rest_to_cash) */
+  restRule: boolean;
+  /** Reste du mois (revenus, reports compris, + emprunts − dépenses nettes) */
+  rest: number;
+  /** Reporté en revenu sur le mois suivant */
+  carried: number;
+  /** Report reçu du mois précédent (revenu « Reste du mois précédent », hors épargne) */
+  carryIn: number;
   invested: number;
   /** Vers les caisses des projets : approvisionnements − restitutions de la période */
   toProjects: number;
@@ -85,10 +95,21 @@ const monthsCte = (userId: string, ps: PeriodSettings) => sql`
 const savingsCtes = (userId: string, ps: PeriodSettings) => sql`
   ${monthsCte(userId, ps)},
   inc as (
+    -- s : revenus hors reports (le report « Reste du mois précédent » n'est jamais une nouvelle épargne) ;
+    -- r : reste du mois (revenus, reports compris, + emprunts − dépenses nettes), pour les mois à rest_to_cash
     select ${periodKeySql(sql`occurred_at`, ps)} as m,
-      coalesce(sum(amount) filter (where kind = 'income'), 0) as s,
-      coalesce(sum(case kind when 'expense' then amount when 'refund' then -amount else 0 end), 0) as o
-    from transactions where user_id = ${userId} and kind in ('income', 'expense', 'refund') group by 1
+      coalesce(sum(amount) filter (where kind = 'income' and carry_period_id is null), 0) as s,
+      coalesce(sum(case kind when 'expense' then amount when 'refund' then -amount else 0 end), 0) as o,
+      coalesce(sum(case kind when 'expense' then -amount else amount end), 0) as r,
+      coalesce(sum(amount) filter (where carry_period_id is not null), 0) as ci
+    from transactions where user_id = ${userId} group by 1
+  ), co as (
+    -- Montant reporté sur le mois suivant, par mois clôturé
+    select bp.month as m, bp.rest_to_cash as rule, coalesce(sum(t.amount), 0) as c
+    from budget_periods bp
+    left join transactions t on t.carry_period_id = bp.id and t.user_id = bp.user_id
+    where bp.user_id = ${userId}
+    group by bp.month, bp.rest_to_cash
   ), pl as (
     select months.m, sum(coalesce(mb.planned, bl.planned)) as p
     from months
@@ -99,11 +120,15 @@ const savingsCtes = (userId: string, ps: PeriodSettings) => sql`
   ), sb as (
     select months.m, coalesce(inc.s, 0) as income, coalesce(pl.p, 0) as planned, coalesce(inc.o, 0) as net_out,
       greatest(coalesce(inc.s, 0) - coalesce(pl.p, 0), 0) as plan_saving,
-      months.m < ${currentKeySql(ps)} as closed
-    from months left join inc on inc.m = months.m left join pl on pl.m = months.m
+      months.m < ${currentKeySql(ps)} as closed,
+      coalesce(co.rule, false) and months.m < ${currentKeySql(ps)} as rule,
+      coalesce(inc.r, 0) as rest, coalesce(co.c, 0) as carried, coalesce(inc.ci, 0) as carry_in
+    from months left join inc on inc.m = months.m left join pl on pl.m = months.m left join co on co.m = months.m
   ), sv as (
-    -- Période terminée : épargne réelle (revenus − dépenses nettes) ; période en cours : épargne prévue
-    select sb.*, case when closed then greatest(income - net_out, 0) else plan_saving end as saving
+    -- Mois clôturé avec la fenêtre de clôture : reste du mois − montant reporté (minimum 0) ;
+    -- autre période terminée : épargne réelle (revenus − dépenses nettes) ; période en cours : épargne prévue
+    select sb.*,
+      case when rule then greatest(rest - carried, 0) when closed then greatest(income - net_out, 0) else plan_saving end as saving
     from sb
   )`;
 
@@ -143,7 +168,7 @@ export async function getCaisse(userId: string) {
           sum(case type when 'fund' then amount when 'back' then -amount else 0 end) as s
         from project_moves where user_id = ${userId} group by 1
       )
-      select to_char(sv.m, 'YYYY-MM') as month, sv.income, sv.planned, sv.net_out, sv.plan_saving, sv.saving, sv.closed,
+      select to_char(sv.m, 'YYYY-MM') as month, sv.income, sv.rule, sv.rest, sv.carried, sv.carry_in, sv.planned, sv.net_out, sv.plan_saving, sv.saving, sv.closed,
         coalesce(outm.s, 0) as invested, coalesce(pjm.s, 0) as to_projects,
         sum(sv.saving - coalesce(outm.s, 0) - coalesce(pjm.s, 0)) over (order by sv.m) as cum
       from sv left join outm on outm.m = sv.m left join pjm on pjm.m = sv.m
@@ -159,9 +184,14 @@ export async function getCaisse(userId: string) {
     planned: n(r.planned),
     out: n(r.net_out),
     planSaving: n(r.plan_saving),
-    unspent: n(r.saving) - n(r.plan_saving),
+    // Mois clôturé avec report : la part de caisse n'est pas découpée en épargne prévue + non dépensé
+    unspent: r.rule === true ? 0 : n(r.saving) - n(r.plan_saving),
     saving: n(r.saving),
     closed: r.closed === true,
+    restRule: r.rule === true,
+    rest: n(r.rest),
+    carried: n(r.carried),
+    carryIn: n(r.carry_in),
     invested: n(r.invested),
     toProjects: n(r.to_projects),
     cum: n(r.cum),
